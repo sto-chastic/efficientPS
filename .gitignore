@@ -2,3 +2,6 @@
 .devcontainer/*
 .devcontainer
 Dockerfile
+
+#pychache
+*__pycache__*

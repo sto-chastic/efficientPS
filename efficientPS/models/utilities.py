@@ -82,3 +82,38 @@ class MobileInvertedBottleneck(nn.Module):
             return x + self.conv(x)
         else:
             return self.conv(x)
+
+class DensePredictionCell(nn.Module):
+    def __init__(self, activation=nn.LeakyReLU):
+        super(DensePredictionCell, self).__init__()
+        self.activation = activation()
+
+        self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(1,6), dilation=(1,6))
+        self.bn1 = nn.BatchNorm2d(256)
+        self.conv2 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
+        self.bn2 = nn.BatchNorm2d(256)
+        self.conv3 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(6,21), dilation=(6,21))
+        self.bn3 = nn.BatchNorm2d(256)
+        self.conv4 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(18,15), dilation=(18,15))
+        self.bn4 = nn.BatchNorm2d(256)
+        self.conv5 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(6,3), dilation=(6,3))
+        self.bn5 = nn.BatchNorm2d(256)
+
+        self.conv_final = conv_1x1_bn(1280, 256, activation)
+
+    def forward(self, x):
+        x_1 = self.activation(self.bn1(self.conv1(x)))
+
+        x_2 = self.activation(self.bn2(self.conv2(x_1)))
+        x_3 = self.activation(self.bn3(self.conv3(x_1)))
+        x_4 = self.activation(self.bn4(self.conv4(x_1)))
+        x_5 = self.activation(self.bn5(self.conv5(x_4)))
+
+        block = torch.cat([x_1, x_2, x_3, x_4, x_5], dim=1)
+
+        return self.conv_final(block)
+
+if __name__ == "__main__":
+    dpc = DensePredictionCell()
+    out = dpc(torch.rand(3, 256, 32, 64))
+    print("out", out.shape)

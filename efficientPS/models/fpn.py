@@ -6,7 +6,7 @@ from .utilities import DepthSeparableConv2d, MobileInvertedBottleneck, conv_1x1_
 
 
 class TwoWayFeaturePyramid(nn.Module):
-    def __init__(self, activation=nn.GELU):
+    def __init__(self, activation=nn.LeakyReLU):
         super(TwoWayFeaturePyramid, self).__init__()
 
         # Main branch
@@ -15,55 +15,55 @@ class TwoWayFeaturePyramid(nn.Module):
             in_channels=3,
             out_channels=48,
             stride=2,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 48, 512, 1024
         self.block2 = MobileInvertedBottleneck(
             in_channels=48,
             out_channels=24,
             stride=1,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 24, 512, 1024
         self.block3 = MobileInvertedBottleneck(
             in_channels=24,
             out_channels=40,
             stride=2,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 40, 256, 512
         self.block4 = MobileInvertedBottleneck(
             in_channels=40,
             out_channels=64,
             stride=2,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 64, 128, 256
         self.block5 = MobileInvertedBottleneck(
             in_channels=64,
             out_channels=128,
             stride=2,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 128, 64, 128
         self.block6 = MobileInvertedBottleneck(
             in_channels=128,
             out_channels=176,
             stride=1,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 176, 64, 128
         self.block7 = MobileInvertedBottleneck(
             in_channels=176,
             out_channels=304,
             stride=2,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 304, 32, 64
         self.block8 = MobileInvertedBottleneck(
             in_channels=304,
             out_channels=512,
             stride=1,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 512, 32, 64
         self.block9 = MobileInvertedBottleneck(
             in_channels=512,
             out_channels=2048,
             stride=1,
-            expand_ratio=1,
+            expand_ratio=3,
         ) # output 2048, 32, 64
 
         # Bottom-up branch
@@ -130,7 +130,7 @@ class TwoWayFeaturePyramid(nn.Module):
 
 
 if __name__ == "__main__":
-    fpn = TwoWayFeaturePyramid()
+    fpn = TwoWayFeaturePyramid().cuda()
     p32, p16, p8, p4 = fpn(torch.rand(3, 3, 1024, 2048))
     print("p32", p32.shape)
     print("p16", p16.shape)

@@ -20,5 +20,23 @@
             "args": [],
             "console": "integratedTerminal",
         },
+        {
+            "name": "sshead",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.ss_head",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "fpn",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.fpn",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
     ]
 }

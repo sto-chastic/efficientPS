@@ -99,7 +99,7 @@ class DensePredictionCell(nn.Module):
         self.conv5 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(6,3), dilation=(6,3))
         self.bn5 = nn.BatchNorm2d(256)
 
-        self.conv_final = conv_1x1_bn(1280, 256, activation)
+        self.conv_final = conv_1x1_bn(1280, 128, activation)
 
     def forward(self, x):
         x_1 = self.activation(self.bn1(self.conv1(x)))

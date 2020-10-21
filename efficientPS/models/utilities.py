@@ -113,6 +113,30 @@ class DensePredictionCell(nn.Module):
 
         return self.conv_final(block)
 
+class RegionProposalNetwork(nn.Module):
+    def __init__(self, anchors, activation=nn.LeakyReLU):
+        super(RegionProposalNetwork, self).__init__()
+        self.activation = activation()
+        self.anchors = anchors # torch.tensor([[0, -2.0, -2.0, 22.0, 22.0], [0, -2.0, -2.0, 22.0, 22.0]])
+        # First value corresponds to which image in the batch the anchor is applied to
+        self.num_anchors = len(anchors)
+
+        self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
+        self.bn1 = nn.BatchNorm2d(256)
+
+        self.anchors_conv = conv_1x1_bn(256, self.num_anchors*4, activation)
+        self.objectness_conv = conv_1x1_bn(256, self.num_anchors, activation)
+
+    def forward(self, x):
+        x = self.activation(self.bn1(self.conv1(x)))
+
+        anchors = self.anchors_conv(x)
+        objectness = self.objectness_conv(x)
+
+
+
+        return anchors, objectness
+
 if __name__ == "__main__":
     dpc = DensePredictionCell()
     out = dpc(torch.rand(3, 256, 32, 64))

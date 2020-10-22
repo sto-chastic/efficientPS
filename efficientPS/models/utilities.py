@@ -189,7 +189,7 @@ class RegionProposalNetwork(nn.Module):
 
         corrected_anchors = torch.cat(
             (corrected_position, corrected_size), 2
-        )  # BxKx4x(wxh)
+        )  # BxKx4x(w*h)
         format_anchors = (
             corrected_anchors.permute((0, 2, 1, 3))
             .reshape(3, 4, -1)
@@ -197,7 +197,7 @@ class RegionProposalNetwork(nn.Module):
         )
         list_anchors = [
             x.squeeze() for x in torch.chunk(format_anchors, batch)
-        ]
+        ]  # List[(w*h*K)x4, ..., (w*h*K)x4]  len = batch
         return list_anchors, torch.sigmoid(objectness)
 
 

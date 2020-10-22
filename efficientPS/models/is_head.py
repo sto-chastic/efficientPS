@@ -6,6 +6,7 @@ from torchvision.ops import RoIAlign
 
 from .utilities import DepthSeparableConv2d, RegionProposalNetwork
 
+
 class InstanceSegmentationHead(nn.Module):
     def __init__(self, num_anchors, activation=nn.LeakyReLU):
         super(InstanceSegmentationHead, self).__init__()
@@ -19,7 +20,6 @@ class InstanceSegmentationHead(nn.Module):
         self.roi_align_16 = RoIAlign((14, 14), spatial_scale=16)
         self.roi_align_8 = RoIAlign((14, 14), spatial_scale=8)
         self.roi_align_4 = RoIAlign((14, 14), spatial_scale=4)
-
 
     def forward(self, inp):
         # Main and bottom-up

@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 
+
 def outputSize(in_size, kernel_size, stride, padding):
-    output = int((in_size - kernel_size + 2*padding) / stride) + 1
+    output = int((in_size - kernel_size + 2 * padding) / stride) + 1
     return output
+
 
 class DepthSeparableConv2d(nn.Module):
     def __init__(
@@ -50,18 +52,27 @@ def conv_1x1_bn(in_channels, out_channels, activation=nn.LeakyReLU):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
         nn.BatchNorm2d(out_channels),
-        nn.ReLU6(inplace=True)
+        nn.ReLU6(inplace=True),
     )
 
 
 class MobileInvertedBottleneck(nn.Module):
-    def __init__(self, in_channels, out_channels, stride, expand_ratio, activation=nn.ReLU6):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        stride,
+        expand_ratio,
+        activation=nn.ReLU6,
+    ):
         super(MobileInvertedBottleneck, self).__init__()
         self.stride = stride
         assert stride in [1, 2]
 
         hidden_dim = int(in_channels * expand_ratio)
-        self.residual_shortcut = (self.stride == 1 and in_channels == out_channels)
+        self.residual_shortcut = (
+            self.stride == 1 and in_channels == out_channels
+        )
 
         self.conv = nn.Sequential(
             # pw
@@ -69,7 +80,15 @@ class MobileInvertedBottleneck(nn.Module):
             nn.BatchNorm2d(hidden_dim),
             activation(inplace=True),
             # dw
-            nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+            nn.Conv2d(
+                hidden_dim,
+                hidden_dim,
+                3,
+                stride,
+                1,
+                groups=hidden_dim,
+                bias=False,
+            ),
             nn.BatchNorm2d(hidden_dim),
             activation(inplace=True),
             # pw-linear
@@ -83,20 +102,39 @@ class MobileInvertedBottleneck(nn.Module):
         else:
             return self.conv(x)
 
+
 class DensePredictionCell(nn.Module):
     def __init__(self, activation=nn.LeakyReLU):
         super(DensePredictionCell, self).__init__()
         self.activation = activation()
 
-        self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(1,6), dilation=(1,6))
+        self.conv1 = DepthSeparableConv2d(
+            256, 256, kernel_size=3, stride=1, padding=(1, 6), dilation=(1, 6)
+        )
         self.bn1 = nn.BatchNorm2d(256)
         self.conv2 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
         self.bn2 = nn.BatchNorm2d(256)
-        self.conv3 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(6,21), dilation=(6,21))
+        self.conv3 = DepthSeparableConv2d(
+            256,
+            256,
+            kernel_size=3,
+            stride=1,
+            padding=(6, 21),
+            dilation=(6, 21),
+        )
         self.bn3 = nn.BatchNorm2d(256)
-        self.conv4 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(18,15), dilation=(18,15))
+        self.conv4 = DepthSeparableConv2d(
+            256,
+            256,
+            kernel_size=3,
+            stride=1,
+            padding=(18, 15),
+            dilation=(18, 15),
+        )
         self.bn4 = nn.BatchNorm2d(256)
-        self.conv5 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1, padding=(6,3), dilation=(6,3))
+        self.conv5 = DepthSeparableConv2d(
+            256, 256, kernel_size=3, stride=1, padding=(6, 3), dilation=(6, 3)
+        )
         self.bn5 = nn.BatchNorm2d(256)
 
         self.conv_final = conv_1x1_bn(1280, 128, activation)
@@ -113,29 +151,45 @@ class DensePredictionCell(nn.Module):
 
         return self.conv_final(block)
 
+
 class RegionProposalNetwork(nn.Module):
     def __init__(self, anchors, activation=nn.LeakyReLU):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
-        self.anchors = anchors # torch.tensor([[0, -2.0, -2.0, 22.0, 22.0], [0, -2.0, -2.0, 22.0, 22.0]])
+        self.anchors = anchors  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
+        # torch.tensor([[0, -2.0, -2.0, 22.0, 22.0], [0, -2.0, -2.0, 22.0, 22.0]])
         # First value corresponds to which image in the batch the anchor is applied to
         self.num_anchors = len(anchors)
 
         self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
         self.bn1 = nn.BatchNorm2d(256)
 
-        self.anchors_conv = conv_1x1_bn(256, self.num_anchors*4, activation)
+        self.anchors_conv = conv_1x1_bn(256, self.num_anchors * 4, activation)
         self.objectness_conv = conv_1x1_bn(256, self.num_anchors, activation)
 
     def forward(self, x):
+        batch = x.shape[0]
         x = self.activation(self.bn1(self.conv1(x)))
 
-        anchors = self.anchors_conv(x)
+        anchors_correction = self.anchors_conv(x)  # Bx(4k)xHxW
         objectness = self.objectness_conv(x)
 
+        anchors_batch = torch.stack(3 * [self.anchors]).view(
+            batch, self.num_anchors, 4, 1
+        )  # Bx4xkx1x1
+        anchors_correction = anchors_correction.view(3, 2, 4, -1)
 
+        corrected_position = (
+            anchors_correction[:, :, :2, :] + anchors_batch[:, :, :2, :]
+        )
+        corrected_size = (
+            torch.exp(anchors_correction[:, :, 2:, :])
+            * anchors_batch[:, :, 2:, :]
+        )
 
-        return anchors, objectness
+        corrected_anchors = torch.cat((corrected_position, corrected_size), 2)
+        return corrected_anchors, torch.sigmoid(objectness)
+
 
 if __name__ == "__main__":
     dpc = DensePredictionCell()

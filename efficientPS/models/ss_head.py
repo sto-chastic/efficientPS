@@ -18,28 +18,28 @@ class SemanticSegmentationHead(nn.Module):
         self.p16_mc = self.make_mismatch_correction_module()
         self.p8_mc = self.make_mismatch_correction_module()
 
-        self.up2 = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.up4 = nn.Upsample(scale_factor=4, mode='bilinear')
-        self.up8 = nn.Upsample(scale_factor=8, mode='bilinear')
-        self.up16 = nn.Upsample(scale_factor=16, mode='bilinear')
+        self.up2 = nn.Upsample(scale_factor=2, mode="bilinear")
+        self.up4 = nn.Upsample(scale_factor=4, mode="bilinear")
+        self.up8 = nn.Upsample(scale_factor=8, mode="bilinear")
+        self.up16 = nn.Upsample(scale_factor=16, mode="bilinear")
 
         self.conv_final = conv_1x1_bn(128, num_classes, activation)
 
     def make_large_scale_feature_extractor(self):
         convolutions = [
-                DepthSeparableConv2d(256, 128),
-                DepthSeparableConv2d(128, 128),
-            ]
+            DepthSeparableConv2d(256, 128),
+            DepthSeparableConv2d(128, 128),
+        ]
 
         return nn.Sequential(*convolutions)
 
     def make_mismatch_correction_module(self):
         convolutions = [
-                DepthSeparableConv2d(128, 128),
-                DepthSeparableConv2d(128, 128),
-            ]
+            DepthSeparableConv2d(128, 128),
+            DepthSeparableConv2d(128, 128),
+        ]
 
-        convolutions += [nn.Upsample(scale_factor=2, mode='bilinear')]
+        convolutions += [nn.Upsample(scale_factor=2, mode="bilinear")]
 
         return nn.Sequential(*convolutions)
 
@@ -62,8 +62,14 @@ class SemanticSegmentationHead(nn.Module):
         block = torch.cat([u_p32, u_p16, u_p8, u_p4], dim=1)
         return self.conv_final(self.up2(block))
 
+
 if __name__ == "__main__":
     ssh = SemanticSegmentationHead(10)
     ssh.cuda()
-    out = ssh(torch.rand(1, 256, 32, 64).cuda(), torch.rand(1, 256, 64, 128).cuda(), torch.rand(1, 256, 128, 256).cuda(), torch.rand(1, 256, 256, 512).cuda())
+    out = ssh(
+        torch.rand(1, 256, 32, 64).cuda(),
+        torch.rand(1, 256, 64, 128).cuda(),
+        torch.rand(1, 256, 128, 256).cuda(),
+        torch.rand(1, 256, 256, 512).cuda(),
+    )
     print("out", out.shape)

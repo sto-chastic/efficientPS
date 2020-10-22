@@ -2,9 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utilities import DepthSeparableConv2d, MobileInvertedBottleneck, conv_1x1_bn
+from .utilities import (
+    DepthSeparableConv2d,
+    MobileInvertedBottleneck,
+    conv_1x1_bn,
+)
 from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
+
 
 class FullModel(nn.Module):
     def __init__(self, num_classes, activation=nn.LeakyReLU):
@@ -12,7 +17,6 @@ class FullModel(nn.Module):
 
         self.fpn = TwoWayFeaturePyramid()
         self.ss_head = SemanticSegmentationHead(num_classes)
-
 
     def forward(self, inp):
         # Main and bottom-up

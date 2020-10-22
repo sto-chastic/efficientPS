@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utilities import DepthSeparableConv2d, MobileInvertedBottleneck, conv_1x1_bn
+from .utilities import (
+    DepthSeparableConv2d,
+    MobileInvertedBottleneck,
+    conv_1x1_bn,
+)
 
 
 class TwoWayFeaturePyramid(nn.Module):
@@ -16,55 +20,55 @@ class TwoWayFeaturePyramid(nn.Module):
             out_channels=48,
             stride=2,
             expand_ratio=3,
-        ) # output 48, 512, 1024
+        )  # output 48, 512, 1024
         self.block2 = MobileInvertedBottleneck(
             in_channels=48,
             out_channels=24,
             stride=1,
             expand_ratio=3,
-        ) # output 24, 512, 1024
+        )  # output 24, 512, 1024
         self.block3 = MobileInvertedBottleneck(
             in_channels=24,
             out_channels=40,
             stride=2,
             expand_ratio=3,
-        ) # output 40, 256, 512
+        )  # output 40, 256, 512
         self.block4 = MobileInvertedBottleneck(
             in_channels=40,
             out_channels=64,
             stride=2,
             expand_ratio=3,
-        ) # output 64, 128, 256
+        )  # output 64, 128, 256
         self.block5 = MobileInvertedBottleneck(
             in_channels=64,
             out_channels=128,
             stride=2,
             expand_ratio=3,
-        ) # output 128, 64, 128
+        )  # output 128, 64, 128
         self.block6 = MobileInvertedBottleneck(
             in_channels=128,
             out_channels=176,
             stride=1,
             expand_ratio=3,
-        ) # output 176, 64, 128
+        )  # output 176, 64, 128
         self.block7 = MobileInvertedBottleneck(
             in_channels=176,
             out_channels=304,
             stride=2,
             expand_ratio=3,
-        ) # output 304, 32, 64
+        )  # output 304, 32, 64
         self.block8 = MobileInvertedBottleneck(
             in_channels=304,
             out_channels=512,
             stride=1,
             expand_ratio=3,
-        ) # output 512, 32, 64
+        )  # output 512, 32, 64
         self.block9 = MobileInvertedBottleneck(
             in_channels=512,
             out_channels=2048,
             stride=1,
             expand_ratio=3,
-        ) # output 2048, 32, 64
+        )  # output 2048, 32, 64
 
         # Bottom-up branch
         self.times4_reduction_bu = conv_1x1_bn(40, 256)
@@ -76,7 +80,7 @@ class TwoWayFeaturePyramid(nn.Module):
         self.times32_reduction_bu = conv_1x1_bn(2048, 256)
 
         # Top-down branch
-        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
         self.times4_reduction_td = conv_1x1_bn(40, 256)
         self.times8_reduction_td = conv_1x1_bn(64, 256)
         self.times16_reduction_td = conv_1x1_bn(176, 256)

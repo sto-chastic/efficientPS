@@ -46,10 +46,14 @@ class Core:
 
 class Trainer(Core):
     def __init__(
-        self, files_dir, **kargs,
+        self,
+        files_dir,
+        **kargs,
     ):
         super().__init__(
-            files_dir=files_dir, train=True, **kargs,
+            files_dir=files_dir,
+            train=True,
+            **kargs,
         )
         self.gradient_clip = gradient_clip
 
@@ -83,7 +87,10 @@ class Trainer(Core):
 
 class Validator(Core):
     def __init__(
-        self, files_dir: List[str], vectormap_dir: str, **kargs,
+        self,
+        files_dir: List[str],
+        vectormap_dir: str,
+        **kargs,
     ):
         super().__init__(
             files_dir=files_dir,
@@ -93,7 +100,9 @@ class Validator(Core):
         )
 
     def __call__(
-        self, model: WorldModels, loss_func: WorldModelLoss,
+        self,
+        model: WorldModels,
+        loss_func: WorldModelLoss,
     ) -> Dict[str, float]:
         model.eval()
         losses: Dict[str, float] = {}

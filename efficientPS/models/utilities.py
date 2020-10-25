@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from torchvision.ops import nms
 
 def outputSize(in_size, kernel_size, stride, padding):
     output = int((in_size - kernel_size + 2 * padding) / stride) + 1
@@ -48,11 +48,18 @@ class DepthSeparableConv2d(nn.Module):
 #     )
 
 
-def conv_1x1_bn(in_channels, out_channels, activation=nn.LeakyReLU):
+def conv_1x1_bn(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
         nn.BatchNorm2d(out_channels),
         nn.ReLU6(inplace=True),
+    )
+
+def conv_1x1_bn_sig(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
+        nn.BatchNorm2d(out_channels),
+        nn.Sigmoid(),
     )
 
 
@@ -137,7 +144,7 @@ class DensePredictionCell(nn.Module):
         )
         self.bn5 = nn.BatchNorm2d(256)
 
-        self.conv_final = conv_1x1_bn(1280, 128, activation)
+        self.conv_final = conv_1x1_bn(1280, 128)
 
     def forward(self, x):
         x_1 = self.activation(self.bn1(self.conv1(x)))
@@ -153,9 +160,10 @@ class DensePredictionCell(nn.Module):
 
 
 class RegionProposalNetwork(nn.Module):
-    def __init__(self, anchors, activation=nn.LeakyReLU):
+    def __init__(self, anchors, nms_threshold=0.9, activation=nn.LeakyReLU):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
+        self.nms_threshold = nms_threshold
         self.anchors = anchors  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
         # torch.tensor([[0, -2.0, -2.0, 22.0, 22.0], [0, -2.0, -2.0, 22.0, 22.0]])
         # First value corresponds to which image in the batch the anchor is applied to
@@ -164,20 +172,20 @@ class RegionProposalNetwork(nn.Module):
         self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
         self.bn1 = nn.BatchNorm2d(256)
 
-        self.anchors_conv = conv_1x1_bn(256, self.num_anchors * 4, activation)
-        self.objectness_conv = conv_1x1_bn(256, self.num_anchors, activation)
+        self.anchors_conv = conv_1x1_bn(256, self.num_anchors * 4)
+        self.objectness_conv = conv_1x1_bn_sig(256, self.num_anchors)
 
     def forward(self, x):
         batch = x.shape[0]
         x = self.activation(self.bn1(self.conv1(x)))
 
         anchors_correction = self.anchors_conv(x)  # Bx(4k)xHxW
-        objectness = self.objectness_conv(x)
+        objectness = self.objectness_conv(x) # BxKxHxW
 
-        anchors_batch = torch.stack(3 * [self.anchors]).view(
+        anchors_batch = torch.stack(batch * [self.anchors]).view(
             batch, self.num_anchors, 4, 1
-        )  # Bx4xkx1
-        anchors_correction = anchors_correction.view(3, 2, 4, -1)
+        )  # Bx4xKx1
+        anchors_correction = anchors_correction.view(batch, self.num_anchors, 4, -1)
 
         corrected_position = (
             anchors_correction[:, :, :2, :] + anchors_batch[:, :, :2, :]
@@ -192,13 +200,35 @@ class RegionProposalNetwork(nn.Module):
         )  # BxKx4x(w*h)
         format_anchors = (
             corrected_anchors.permute((0, 2, 1, 3))
-            .reshape(3, 4, -1)
+            .reshape(batch, 4, -1)
             .permute((0, 2, 1))
         )
+
+        objectness = objectness.view(batch, self.num_anchors, 1, -1)
+        format_objectness = (
+            objectness.permute((0, 2, 1, 3))
+            .reshape(batch, 1, -1)
+            .permute((0, 2, 1))
+        )
+
+        nms_indices = nms(
+            format_anchors.squeeze_(),
+            format_objectness.squeeze_(),
+            iou_threshold=self.nms_threshold
+        )
+
+        format_anchors = format_anchors.index_select(0, nms_indices)
+        format_objectness = format_objectness.index_select(0, nms_indices)
+
         list_anchors = [
             x.squeeze() for x in torch.chunk(format_anchors, batch)
         ]  # List[(w*h*K)x4, ..., (w*h*K)x4]  len = batch
-        return list_anchors, torch.sigmoid(objectness)
+
+        list_objectness = [
+            x.squeeze() for x in torch.chunk(format_objectness, batch)
+        ]  # List[(w*h*K)x1, ..., (w*h*K)x1]  len = batch
+
+        return list_anchors, list_objectness
 
 
 if __name__ == "__main__":

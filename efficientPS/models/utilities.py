@@ -160,7 +160,7 @@ class DensePredictionCell(nn.Module):
 
 
 class RegionProposalNetwork(nn.Module):
-    def __init__(self, anchors, nms_threshold=0.9, activation=nn.LeakyReLU):
+    def __init__(self, anchors, nms_threshold=0.7, activation=nn.LeakyReLU):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
         self.nms_threshold = nms_threshold
@@ -176,17 +176,29 @@ class RegionProposalNetwork(nn.Module):
         self.objectness_conv = conv_1x1_bn_sig(256, self.num_anchors)
 
     def forward(self, x):
-        batch = x.shape[0]
+        batch, height, width = x.shape[0], x.shape[2], x.shape[3]
+        
         x = self.activation(self.bn1(self.conv1(x)))
 
         anchors_correction = self.anchors_conv(x)  # Bx(4k)xHxW
         objectness = self.objectness_conv(x) # BxKxHxW
 
+        anchor_position = torch.arange(0, 64).view(1, -1) * torch.arange(0, 32).view(-1, 1)
+
         anchors_batch = torch.stack(batch * [self.anchors]).view(
             batch, self.num_anchors, 4, 1
         )  # Bx4xKx1
+        anchors_correction = anchors_correction.view(batch, self.num_anchors, 4, height, width)
+
+        x_bb_position = torch.arange(0, height).view(1,1,height,1).to(x.device)
+        y_bb_position = torch.arange(0, width).view(1,1,1,width).to(x.device)
+
+        anchors_correction[:,:,0,...] = anchors_correction[:,:,0,...] + x_bb_position
+        anchors_correction[:,:,1,...] = anchors_correction[:,:,1,...] + y_bb_position
+
         anchors_correction = anchors_correction.view(batch, self.num_anchors, 4, -1)
 
+        anchors_correction
         corrected_position = (
             anchors_correction[:, :, :2, :] + anchors_batch[:, :, :2, :]
         )
@@ -212,7 +224,7 @@ class RegionProposalNetwork(nn.Module):
         )
 
         nms_indices = nms(
-            format_anchors.squeeze_(),
+            convert_box_chw_to_vertices(format_anchors.squeeze_()),
             format_objectness.squeeze_(),
             iou_threshold=self.nms_threshold
         )
@@ -230,6 +242,16 @@ class RegionProposalNetwork(nn.Module):
 
         return list_anchors, list_objectness
 
+def convert_box_vertices_to_cwh():
+    pass
+
+def convert_box_chw_to_vertices(bbox):
+    vt = torch.zeros_like(bbox)
+    vt[:,0] = bbox[:, 0] - bbox[:, 2]/2
+    vt[:,1] = bbox[:, 1] - bbox[:, 3]/2
+    vt[:,2] = bbox[:, 0] + bbox[:, 2]/2
+    vt[:,3] = bbox[:, 1] + bbox[:, 3]/2
+    return vt
 
 if __name__ == "__main__":
     dpc = DensePredictionCell()

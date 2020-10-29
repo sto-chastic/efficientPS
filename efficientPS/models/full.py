@@ -9,25 +9,30 @@ from .utilities import (
 )
 from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
+from .is_head import InstanceSegmentationHead
 
 
 class FullModel(nn.Module):
-    def __init__(self, num_classes, activation=nn.LeakyReLU):
+    def __init__(self, num_things, num_stuff, anchors, nms_threshold, activation=nn.LeakyReLU):
         super(FullModel, self).__init__()
 
-        self.fpn = TwoWayFeaturePyramid()
-        self.ss_head = SemanticSegmentationHead(num_classes)
+        self.fpn = TwoWayFeaturePyramid(activation)
+        self.ss_head = SemanticSegmentationHead(num_stuff+num_things, activation)
+        self.is_head = InstanceSegmentationHead(num_things, anchors, nms_threshold,activation)
 
     def forward(self, inp):
         # Main and bottom-up
+        p32, p16, p8, p4 = self.fpn(inp)
+        semantic_logits = self.ss_head(p32, p16, p8, p4)
+        classes, bboxes, mask_logits = self.is_head(p32, p16, p8, p4)
 
-        return p32, p16, p8, p4
+        return semantic_logits, classes, bboxes, mask_logits
 
 
 if __name__ == "__main__":
-    fpn = TwoWayFeaturePyramid().cuda()
-    p32, p16, p8, p4 = fpn(torch.rand(3, 3, 1024, 2048))
-    print("p32", p32.shape)
-    print("p16", p16.shape)
-    print("p8", p8.shape)
-    print("p4", p4.shape)
+    anchors = torch.tensor([[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]).cuda()
+
+    full = FullModel(10, 8, anchors, 0.3).cuda()
+    semantic_logits, classes, bboxes, mask_logits = full(torch.rand(1, 3, 512, 1024).cuda())
+    # semantic_logits, classes, bboxes, mask_logits = full(torch.rand(1, 3, 1024, 2048).cuda())
+

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from torchvision.ops import RoIAlign, nms
 
-from .utilities import DepthSeparableConv2d, RegionProposalNetwork, convert_box_chw_to_vertices, conv_1x1_bn_sig
+from .utilities import DepthSeparableConv2d, RegionProposalNetwork, convert_box_chw_to_vertices, conv_1x1_bn_custom_act
 
 
 class ROIFeatureExtraction(nn.Module):
@@ -24,6 +24,8 @@ class ROIFeatureExtraction(nn.Module):
 
         self.nms_threshold = nms_threshold
 
+        self.complete_extraction = False
+
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
         feature_inputs = {
@@ -36,7 +38,8 @@ class ROIFeatureExtraction(nn.Module):
         p32_anchors, p32_objectness = self.rps_p32(p32)
         p16_anchors, p16_objectness = self.rps_p16(p16)
         p8_anchors, p8_objectness = self.rps_p8(p8)
-        # p4_anchors, p4_objectness = self.rps_p4(p4)
+        if self.complete_extraction:
+            p4_anchors, p4_objectness = self.rps_p4(p4)
 
         def apply_to_batches(l, operation, *args):
             return [operation(x, *args) for x in l]
@@ -45,29 +48,52 @@ class ROIFeatureExtraction(nn.Module):
             return [operation(x1, x2, *args) for x1, x2 in zip(l1, l2)]
 
         # Scale properly
-        scaled_anchors = [
-            apply_to_batches(p32_anchors, torch.mul, 32),
-            apply_to_batches(p16_anchors, torch.mul, 16),
-            apply_to_batches(p8_anchors, torch.mul, 8),
-            # apply_to_batches(p4_anchors, torch.mul, 4),
-        ]
+        if self.complete_extraction:
+            scaled_anchors = [
+                apply_to_batches(p32_anchors, torch.mul, 32),
+                apply_to_batches(p16_anchors, torch.mul, 16),
+                apply_to_batches(p8_anchors, torch.mul, 8),
+                apply_to_batches(p4_anchors, torch.mul, 4),
+            ]
+        else:
+            scaled_anchors = [
+                apply_to_batches(p32_anchors, torch.mul, 32),
+                apply_to_batches(p16_anchors, torch.mul, 16),
+                apply_to_batches(p8_anchors, torch.mul, 8),
+            ]
 
-        scores = [
-            p32_objectness,
-            p16_objectness,
-            p8_objectness,
-            # p4_objectness,
-        ]
+        if self.complete_extraction:
+            scores = [
+                p32_objectness,
+                p16_objectness,
+                p8_objectness,
+                p4_objectness,
+            ]
+        else:
+            scores = [
+                p32_objectness,
+                p16_objectness,
+                p8_objectness,
+            ]
+
 
         def get_channel(anchors):
             return torch.max(torch.ones_like(anchors[:, 2]), torch.min(torch.ones_like(anchors[:, 2])*4, torch.floor(3 + torch.log2(torch.sqrt(anchors[:,2]*anchors[:,3])/224))))
 
-        level_calculation = [
-            apply_to_batches(p32_anchors, get_channel),
-            apply_to_batches(p16_anchors, get_channel),
-            apply_to_batches(p8_anchors, get_channel),
-            # apply_to_batches(p4_anchors, get_channel),
-        ]
+        if self.complete_extraction:
+            level_calculation = [
+                apply_to_batches(p32_anchors, get_channel),
+                apply_to_batches(p16_anchors, get_channel),
+                apply_to_batches(p8_anchors, get_channel),
+                apply_to_batches(p4_anchors, get_channel),
+            ]
+        else:
+            level_calculation = [
+                apply_to_batches(p32_anchors, get_channel),
+                apply_to_batches(p16_anchors, get_channel),
+                apply_to_batches(p8_anchors, get_channel),
+            ]
+
 
         anchors_per_level = {
             1: [],
@@ -184,11 +210,12 @@ class InstanceSegmentationHead(nn.Module):
             DepthSeparableConv2d(256, 256),
             DepthSeparableConv2d(256, 256),
             nn.ConvTranspose2d(256, 256, 2, stride=2, padding=0),
-            conv_1x1_bn_sig(256, num_things)
+            conv_1x1_bn_custom_act(256, num_things)
         ]
         return nn.Sequential(*convolutions)
 
-    def forward(self, extracted_features_):
+    def forward(self, p32, p16, p8, p4):
+        extracted_features_ = self.roi_features(p32, p16, p8, p4)
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(shape_[0], shape_[1], -1).permute(0,2,1)
         core = self.core_fc(extracted_features)
@@ -201,9 +228,9 @@ class InstanceSegmentationHead(nn.Module):
         def get_mask(element):
             return self.mask(element.squeeze_(0))
 
-        masks = [get_mask(x) for x in elements]
+        masks = [get_mask(x).unsqueeze(1) for x in elements]
 
-        return classes, bboxes
+        return classes, bboxes, torch.append(masks,1)
 
 if __name__ == "__main__":
     anchors = torch.tensor([[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]).cuda()
@@ -217,7 +244,10 @@ if __name__ == "__main__":
     # print("extracted_features", extracted_features.shape)
 
     ish = InstanceSegmentationHead(8, anchors, 0.3).cuda()
-    classes, bboxes = ish(
-        torch.rand(1, 268, 256, 14, 14).cuda(),
+    classes, bboxes, mask = ish(
+        torch.rand(1, 256, 32, 64).cuda(),
+        torch.rand(1, 256, 64, 128).cuda(),
+        torch.rand(1, 256, 128, 256).cuda(),
+        torch.rand(1, 256, 256, 512).cuda(),
     )
-    print("classes, bboxes", classes.shape, bboxes.shape)
+    print("classes, bboxes, mask", classes.shape, bboxes.shape, mask.shape)

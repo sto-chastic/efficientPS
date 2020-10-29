@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utilities import DensePredictionCell, DepthSeparableConv2d, conv_1x1_bn
+from .utilities import DensePredictionCell, DepthSeparableConv2d, conv_1x1_bn, conv_1x1_bn_custom_act
 
 
 class SemanticSegmentationHead(nn.Module):
@@ -23,7 +23,8 @@ class SemanticSegmentationHead(nn.Module):
         self.up8 = nn.Upsample(scale_factor=8, mode="bilinear")
         self.up16 = nn.Upsample(scale_factor=16, mode="bilinear")
 
-        self.conv_final = conv_1x1_bn(128, num_classes)
+        self.conv_final = conv_1x1_bn_custom_act(512, num_classes, activation=None)
+        self.softmax = nn.Softmax(1)
 
     def make_large_scale_feature_extractor(self):
         convolutions = [
@@ -43,7 +44,7 @@ class SemanticSegmentationHead(nn.Module):
 
         return nn.Sequential(*convolutions)
 
-    def forward_(self, p32, p16, p8, p4):
+    def forward(self, p32, p16, p8, p4):
         p32 = self.p32_dpc(p32)
         p16 = self.p16_dpc(p16)
         p8 = self.p8_lsfe(p8)
@@ -54,13 +55,12 @@ class SemanticSegmentationHead(nn.Module):
         p8 = p8 + self.p16_mc(p32_p16)
         p4 = p4 + self.p8_mc(p8)
 
-        u_p32 = self.up16(p32)
-        u_p16 = self.up8(p16)
-        u_p8 = self.up4(p8)
-        u_p4 = self.up2(p4)
+        u_p32 = self.up8(p32)
+        u_p16 = self.up4(p16)
+        u_p8 = self.up2(p8)
 
-        block = torch.cat([u_p32, u_p16, u_p8, u_p4], dim=1)
-        return self.conv_final(self.up2(block))
+        block = torch.cat([u_p32, u_p16, u_p8, p4], dim=1)
+        return self.softmax(self.conv_final(self.up4(block)))
 
 
 if __name__ == "__main__":

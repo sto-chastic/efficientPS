@@ -48,5 +48,14 @@
             "args": [],
             "console": "integratedTerminal",
         },
+        {
+            "name": "full",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.full",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
     ]
 }

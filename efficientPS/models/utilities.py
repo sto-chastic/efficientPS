@@ -58,12 +58,18 @@ def conv_1x1_bn(in_channels, out_channels):
         nn.ReLU6(inplace=True),
     )
 
-def conv_1x1_bn_sig(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
-        nn.BatchNorm2d(out_channels),
-        nn.Sigmoid(),
-    )
+def conv_1x1_bn_custom_act(in_channels, out_channels, activation=nn.Sigmoid):
+    if activation:
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
+            nn.BatchNorm2d(out_channels),
+            activation(),
+        )
+    else:
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
+            nn.BatchNorm2d(out_channels),
+        )
 
 
 class MobileInvertedBottleneck(nn.Module):
@@ -176,7 +182,7 @@ class RegionProposalNetwork(nn.Module):
         self.bn1 = nn.BatchNorm2d(256)
 
         self.anchors_conv = conv_1x1_bn(256, self.num_anchors * 4)
-        self.objectness_conv = conv_1x1_bn_sig(256, self.num_anchors)
+        self.objectness_conv = conv_1x1_bn_custom_act(256, self.num_anchors)
 
     def forward(self, x):
         batch, height, width = x.shape[0], x.shape[2], x.shape[3]

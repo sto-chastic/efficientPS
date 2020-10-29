@@ -6,6 +6,9 @@ def outputSize(in_size, kernel_size, stride, padding):
     output = int((in_size - kernel_size + 2 * padding) / stride) + 1
     return output
 
+# def outputSizeDeconv(in_size, kernel_size, stride, padding, output_padding):
+#     return int((in_size-1)*stride-2*padding+(kernel_size-1)+output_padding+1)
+
 
 class DepthSeparableConv2d(nn.Module):
     def __init__(

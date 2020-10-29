@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from torchvision.ops import RoIAlign, nms
 
-from .utilities import DepthSeparableConv2d, RegionProposalNetwork, convert_box_chw_to_vertices
+from .utilities import DepthSeparableConv2d, RegionProposalNetwork, convert_box_chw_to_vertices, conv_1x1_bn_sig
 
 
 class ROIFeatureExtraction(nn.Module):
@@ -149,6 +149,7 @@ class InstanceSegmentationHead(nn.Module):
         self.fc_classes = self.make_classes_output(num_things)
         self.fc_bb = self.make_bb_output(num_things)
         
+        self.mask = self.make_mask_segmentation(num_things)
 
     def make_fully_connected_module(self, activation):
         fully_connected = [
@@ -163,8 +164,8 @@ class InstanceSegmentationHead(nn.Module):
 
     def make_classes_output(self, num_things, activation=nn.LogSoftmax):
         convolutions = [
-            nn.Conv1d(1024, num_things, 1, 1),
-            nn.BatchNorm1d(num_things),
+            nn.Conv1d(1024, 2*num_things, 1, 1),
+            nn.BatchNorm1d(2*num_things),
             activation(dim=2)
         ]
         return nn.Sequential(*convolutions)
@@ -178,12 +179,12 @@ class InstanceSegmentationHead(nn.Module):
 
     def make_mask_segmentation(self, num_things):
         convolutions = [
-            DepthSeparableConv2d,
-            DepthSeparableConv2d,
-            DepthSeparableConv2d,
-            DepthSeparableConv2d,
-            nn.ConvTranspose2d(256, 256, 3, stride=2, padding=1),
-            
+            DepthSeparableConv2d(256, 256),
+            DepthSeparableConv2d(256, 256),
+            DepthSeparableConv2d(256, 256),
+            DepthSeparableConv2d(256, 256),
+            nn.ConvTranspose2d(256, 256, 2, stride=2, padding=0),
+            conv_1x1_bn_sig(256, num_things)
         ]
         return nn.Sequential(*convolutions)
 
@@ -192,8 +193,15 @@ class InstanceSegmentationHead(nn.Module):
         extracted_features = extracted_features_.view(shape_[0], shape_[1], -1).permute(0,2,1)
         core = self.core_fc(extracted_features)
 
-        classes = self.fc_classes(core)
+        classes = self.fc_classes(core).view(shape_[0], self.num_things, 2, shape_[1])
         bboxes = self.fc_bb(core).view(shape_[0], self.num_things, 4, shape_[1])
+
+        elements = torch.chunk(extracted_features_.permute(1,0,2,3,4),shape_[1])
+
+        def get_mask(element):
+            return self.mask(element.squeeze_(0))
+
+        masks = [get_mask(x) for x in elements]
 
         return classes, bboxes
 
@@ -208,8 +216,8 @@ if __name__ == "__main__":
     # )
     # print("extracted_features", extracted_features.shape)
 
-    ish = InstanceSegmentationHead(8, anchors, 0.6).cuda()
+    ish = InstanceSegmentationHead(8, anchors, 0.3).cuda()
     classes, bboxes = ish(
-        torch.rand(1, 3268, 256, 14, 14).cuda(),
+        torch.rand(1, 268, 256, 14, 14).cuda(),
     )
     print("classes, bboxes", classes.shape, bboxes.shape)

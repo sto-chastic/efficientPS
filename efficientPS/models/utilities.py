@@ -40,11 +40,11 @@ class DepthSeparableConv2d(nn.Module):
         return x
 
 
-# def conv_3x3_bn(in_channels, out_channels, stride):
+# def conv_3x3_bn(in_channels, out_channels, stride, activation=nn.LeakyReLU):
 #     return nn.Sequential(
 #         nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False),
 #         nn.BatchNorm2d(out_channels),
-#         nn.ReLU6(inplace=True)
+#         activation(inplace=True)
 #     )
 
 

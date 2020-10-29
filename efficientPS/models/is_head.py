@@ -7,9 +7,9 @@ from torchvision.ops import RoIAlign, nms
 from .utilities import DepthSeparableConv2d, RegionProposalNetwork, convert_box_chw_to_vertices
 
 
-class InstanceSegmentationHead(nn.Module):
+class ROIFeatureExtraction(nn.Module):
     def __init__(self, anchors, nms_threshold, activation=nn.LeakyReLU):
-        super(InstanceSegmentationHead, self).__init__()
+        super(ROIFeatureExtraction, self).__init__()
         # An anchor is centered at the sliding windowin question,
         # and is associated with a scale and aspectratio.
         # By  default  we  use  3  scales  and3 aspect ratios, yielding
@@ -135,15 +135,81 @@ class InstanceSegmentationHead(nn.Module):
 
             extractions_by_batch.append(torch.cat(joined_extractions, 0))
         return torch.stack(extractions_by_batch)
+        # For the following part use 1d convolution with size and stride (256*14*14) to go through all the proposals
 
+
+class InstanceSegmentationHead(nn.Module):
+    def __init__(self, num_things, anchors, nms_threshold, activation=nn.LeakyReLU):
+        super(InstanceSegmentationHead, self).__init__()
+        self.num_things = num_things
+
+        self.roi_features = ROIFeatureExtraction(anchors, nms_threshold, activation)
+
+        self.core_fc = self.make_fully_connected_module(activation)
+        self.fc_classes = self.make_classes_output(num_things)
+        self.fc_bb = self.make_bb_output(num_things)
+        
+
+    def make_fully_connected_module(self, activation):
+        fully_connected = [
+            nn.Conv1d(256*14*14, 1024, 1, 1),
+            nn.BatchNorm1d(1024),
+            activation(inplace=True),
+            nn.Conv1d(1024, 1024, 1, 1),
+            nn.BatchNorm1d(1024),
+            activation(inplace=True),
+        ]
+        return nn.Sequential(*fully_connected)
+
+    def make_classes_output(self, num_things, activation=nn.LogSoftmax):
+        convolutions = [
+            nn.Conv1d(1024, num_things, 1, 1),
+            nn.BatchNorm1d(num_things),
+            activation(dim=2)
+        ]
+        return nn.Sequential(*convolutions)
+    
+    def make_bb_output(self, num_things):
+        convolutions = [
+            nn.Conv1d(1024, 4*num_things, 1, 1),
+            nn.BatchNorm1d(4*num_things)
+        ]
+        return nn.Sequential(*convolutions)
+
+    def make_mask_segmentation(self, num_things):
+        convolutions = [
+            DepthSeparableConv2d,
+            DepthSeparableConv2d,
+            DepthSeparableConv2d,
+            DepthSeparableConv2d,
+            nn.ConvTranspose2d(256, 256, 3, stride=2, padding=1),
+            
+        ]
+        return nn.Sequential(*convolutions)
+
+    def forward(self, extracted_features_):
+        shape_ = extracted_features_.shape
+        extracted_features = extracted_features_.view(shape_[0], shape_[1], -1).permute(0,2,1)
+        core = self.core_fc(extracted_features)
+
+        classes = self.fc_classes(core)
+        bboxes = self.fc_bb(core).view(shape_[0], self.num_things, 4, shape_[1])
+
+        return classes, bboxes
 
 if __name__ == "__main__":
     anchors = torch.tensor([[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]).cuda()
-    ish = InstanceSegmentationHead(anchors, 0.6).cuda()
-    extracted_features = ish(
-        torch.rand(1, 256, 32, 64).cuda(),
-        torch.rand(1, 256, 64, 128).cuda(),
-        torch.rand(1, 256, 128, 256).cuda(),
-        torch.rand(1, 256, 256, 512).cuda(),
+    # roi = ROIFeatureExtraction(anchors, 0.6).cuda()
+    # extracted_features = roi(
+    #     torch.rand(1, 256, 32, 64).cuda(),
+    #     torch.rand(1, 256, 64, 128).cuda(),
+    #     torch.rand(1, 256, 128, 256).cuda(),
+    #     torch.rand(1, 256, 256, 512).cuda(),
+    # )
+    # print("extracted_features", extracted_features.shape)
+
+    ish = InstanceSegmentationHead(8, anchors, 0.6).cuda()
+    classes, bboxes = ish(
+        torch.rand(1, 3268, 256, 14, 14).cuda(),
     )
-    print("extracted_features", extracted_features.shape)
+    print("classes, bboxes", classes.shape, bboxes.shape)

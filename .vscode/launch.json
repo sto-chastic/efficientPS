@@ -1,0 +1,61 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "utilities",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.utilities",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "sshead",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.ss_head",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "fpn",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.fpn",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "ish",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.is_head",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "full",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.full",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+    ]
+}

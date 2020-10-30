@@ -34,5 +34,5 @@ if __name__ == "__main__":
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
     semantic_logits, classes, bboxes, mask_logits = full(torch.rand(1, 3, 512, 1024).cuda())
-    # semantic_logits, classes, bboxes, mask_logits = full(torch.rand(1, 3, 1024, 2048).cuda())
+    print("semantic_logits, classes, bboxes, mask", semantic_logits.shape, classes.shape, bboxes.shape, mask_logits.shape)
 

@@ -24,7 +24,7 @@ class ROIFeatureExtraction(nn.Module):
 
         self.nms_threshold = nms_threshold
 
-        self.complete_extraction = False
+        self.complete_extraction = True
 
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
@@ -230,18 +230,10 @@ class InstanceSegmentationHead(nn.Module):
 
         masks = [get_mask(x).unsqueeze(1) for x in elements]
 
-        return classes, bboxes, torch.append(masks,1)
+        return classes, bboxes, torch.cat(masks,1)
 
 if __name__ == "__main__":
     anchors = torch.tensor([[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]).cuda()
-    # roi = ROIFeatureExtraction(anchors, 0.6).cuda()
-    # extracted_features = roi(
-    #     torch.rand(1, 256, 32, 64).cuda(),
-    #     torch.rand(1, 256, 64, 128).cuda(),
-    #     torch.rand(1, 256, 128, 256).cuda(),
-    #     torch.rand(1, 256, 256, 512).cuda(),
-    # )
-    # print("extracted_features", extracted_features.shape)
 
     ish = InstanceSegmentationHead(8, anchors, 0.3).cuda()
     classes, bboxes, mask = ish(

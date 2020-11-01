@@ -92,29 +92,35 @@ class TwoWayFeaturePyramid(nn.Module):
     def forward(self, inp):
         ini_shape = inp.shape
         # Main and bottom-up
-        x = self.block1(inp) # /2
-        x = self.block2(x) # /2
-        x = self.block3(x) # /2
+        x = self.block1(inp)  # /2
+        x = self.block2(x)  # /2
+        x = self.block3(x)  # /2
 
         x_bu_1 = self.times4_reduction_bu(x)
         x_td_4_ = self.times4_reduction_td(x)
 
         x = self.block4(x)
 
-        x_bu_2 = self.times8_reduction_bu(x) + nn.AdaptiveAvgPool2d((x.shape[2], x.shape[3]))(x_bu_1)
+        x_bu_2 = self.times8_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_1)
         x_td_3_ = self.times8_reduction_td(x)
 
         x = self.block5(x)
         x = self.block6(x)
 
-        x_bu_3 = self.times16_reduction_bu(x) + nn.AdaptiveAvgPool2d((x.shape[2], x.shape[3]))(x_bu_2)
+        x_bu_3 = self.times16_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_2)
         x_td_2_ = self.times16_reduction_td(x)
 
         x = self.block7(x)
         x = self.block8(x)
         x = self.block9(x)
 
-        x_bu_4 = self.times32_reduction_bu(x) + nn.AdaptiveAvgPool2d((x.shape[2], x.shape[3]))(x_bu_3)
+        x_bu_4 = self.times32_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_3)
         x_td_1 = self.times32_reduction_td(x)
 
         # Top-down branch computation

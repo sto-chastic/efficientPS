@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utilities import DensePredictionCell, DepthSeparableConv2d, conv_1x1_bn, conv_1x1_bn_custom_act
+from .utilities import (
+    DensePredictionCell,
+    DepthSeparableConv2d,
+    conv_1x1_bn,
+    conv_1x1_bn_custom_act,
+)
 
 
 class SemanticSegmentationHead(nn.Module):
@@ -23,7 +28,9 @@ class SemanticSegmentationHead(nn.Module):
         self.up8 = nn.Upsample(scale_factor=8, mode="bilinear")
         self.up16 = nn.Upsample(scale_factor=16, mode="bilinear")
 
-        self.conv_final = conv_1x1_bn_custom_act(512, num_classes, activation=None)
+        self.conv_final = conv_1x1_bn_custom_act(
+            512, num_classes, activation=None
+        )
         self.softmax = nn.Softmax(1)
 
     def make_large_scale_feature_extractor(self):

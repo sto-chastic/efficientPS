@@ -11,14 +11,38 @@ from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
+class PSOutput:
+    def __init__(
+        self,
+        semantic_logits,
+        classes,
+        bboxes,
+        mask_logits,
+    ):
+        self.semantic_logits = semantic_logits,
+        self.classes = classes,
+        self.bboxes = bboxes,
+        self.mask_logits = mask_logits
 
+        
 class FullModel(nn.Module):
-    def __init__(self, num_things, num_stuff, anchors, nms_threshold, activation=nn.LeakyReLU):
+    def __init__(
+        self,
+        num_things,
+        num_stuff,
+        anchors,
+        nms_threshold,
+        activation=nn.LeakyReLU,
+    ):
         super(FullModel, self).__init__()
 
         self.fpn = TwoWayFeaturePyramid(activation)
-        self.ss_head = SemanticSegmentationHead(num_stuff+num_things, activation)
-        self.is_head = InstanceSegmentationHead(num_things, anchors, nms_threshold,activation)
+        self.ss_head = SemanticSegmentationHead(
+            num_stuff + num_things, activation
+        )
+        self.is_head = InstanceSegmentationHead(
+            num_things, anchors, nms_threshold, activation
+        )
 
     def forward(self, inp):
         # Main and bottom-up
@@ -26,13 +50,22 @@ class FullModel(nn.Module):
         semantic_logits = self.ss_head(p32, p16, p8, p4)
         classes, bboxes, mask_logits = self.is_head(p32, p16, p8, p4)
 
-        return semantic_logits, classes, bboxes, mask_logits
+        return PSOutput(semantic_logits, classes, bboxes, mask_logits)
 
 
 if __name__ == "__main__":
-    anchors = torch.tensor([[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]).cuda()
+    anchors = torch.tensor(
+        [[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]
+    ).cuda()
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
-    semantic_logits, classes, bboxes, mask_logits = full(torch.rand(1, 3, 512, 1024).cuda())
-    print("semantic_logits, classes, bboxes, mask", semantic_logits.shape, classes.shape, bboxes.shape, mask_logits.shape)
-
+    out = full(
+        torch.rand(1, 3, 512, 1024).cuda()
+    )
+    # print(
+    #     "semantic_logits, classes, bboxes, mask",
+    #     semantic_logits.shape,
+    #     classes.shape,
+    #     bboxes.shape,
+    #     mask_logits.shape,
+    # )

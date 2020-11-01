@@ -57,5 +57,14 @@
             "args": [],
             "console": "integratedTerminal",
         },
+        {
+            "name": "dataset",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.dataset.dataset",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
     ]
 }

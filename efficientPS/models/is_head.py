@@ -9,6 +9,7 @@ from .utilities import (
     RegionProposalNetwork,
     convert_box_chw_to_vertices,
     conv_1x1_bn_custom_act,
+    RegionProposalOutput
 )
 
 
@@ -33,10 +34,17 @@ class ROIFeatureExtraction(nn.Module):
         batches = p32.shape[0]
         feature_inputs = {1: p32, 2: p16, 3: p8, 4: p4}
         # Main and bottom-up
-        p32_anchors, p32_objectness = self.rps_p32(p32)
-        p16_anchors, p16_objectness = self.rps_p16(p16)
-        p8_anchors, p8_objectness = self.rps_p8(p8)
-        p4_anchors, p4_objectness = self.rps_p4(p4)
+        proposal_outputs = [
+            self.rps_p32(p32),
+            self.rps_p16(p16),
+            self.rps_p8(p8),
+            self.rps_p4(p4)
+        ]
+
+        p32_anchors, p32_objectness = proposal_outputs[0].get_anch_obj()
+        p16_anchors, p16_objectness = proposal_outputs[1].get_anch_obj()
+        p8_anchors, p8_objectness = proposal_outputs[2].get_anch_obj()
+        p4_anchors, p4_objectness = proposal_outputs[3].get_anch_obj()
 
         def apply_to_batches(l, operation, *args):
             return [operation(x, *args) for x in l]
@@ -169,7 +177,7 @@ class ROIFeatureExtraction(nn.Module):
                 )
 
             extractions_by_batch.append(torch.cat(joined_extractions, 0))
-        return torch.stack(extractions_by_batch), scaled_anchors, scores
+        return torch.stack(extractions_by_batch), proposal_outputs
         # For the following part use 1d convolution with size and stride (256*14*14) to go through all the proposals
 
 
@@ -228,7 +236,7 @@ class InstanceSegmentationHead(nn.Module):
         return nn.Sequential(*convolutions)
 
     def forward(self, p32, p16, p8, p4):
-        extracted_features_, primitive_anchors, primitive_objectness = self.roi_features(p32, p16, p8, p4)
+        extracted_features_, primitive_anchors = self.roi_features(p32, p16, p8, p4)
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(
             shape_[0], shape_[1], -1
@@ -251,7 +259,7 @@ class InstanceSegmentationHead(nn.Module):
 
         masks = [get_mask(x).unsqueeze(1) for x in elements]
 
-        return classes, bboxes, torch.cat(masks, 1), primitive_anchors, primitive_objectness
+        return classes, bboxes, torch.cat(masks, 1), primitive_anchors
 
 
 if __name__ == "__main__":

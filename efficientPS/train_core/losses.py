@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .utilities import iou_function
 from ..models.utilities import convert_box_chw_to_vertices
+from ..models.full import ANCHORS
 
 class LossFunctions:
     def __init__(self, ground_truth, inference):
@@ -31,24 +32,30 @@ class LossFunctions:
     def objectness_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
-        primitive_bb[i][0] = self.primitive_anchors
-        primitive_obj = self.primitive_objectness[0]
 
-        est_num_sumples_per_box = self.first_stage_num_samples // len(gt_bb)
+        # How many samples, positive and negative, per bbox we sample
+        num_samples_per_box_stage = self.first_stage_num_samples // len(gt_bb) // 4
 
         objectness_loss = 0
         for bb in gt_bb:
             for i in range(4):
-                samples = random.sample(range(primitive_bb[i][0].shape[0]), est_num_sumples_per_box)
+                level_primitives = self.primitive_anchors[i]
+                primitive_bb = level_primitives.anchors
+                primitive_obj = level_primitives.objectness
+                samples = random.sample(range(primitive_bb[0].shape[0]), num_samples_per_box_stage)
 
-                edges_bb = convert_box_chw_to_vertices(primitive_bb[i][0])
-                gt_objectness = iou_function(primitive_bb[i][0], bb["box"]).ge(self.objectness_thr)
+                edges_bb = convert_box_chw_to_vertices(primitive_bb[0])
+                gt_objectness = iou_function(edges_bb, bb["box"]).ge(self.objectness_thr)
                 partial_objectness_loss = gt_objectness * torch.log(primitive_obj) + (1 - gt_objectness) * torch.log(1 - primitive_obj)
-                objectness_loss += partial_objectness_loss[est_num_sumples_per_box]
+                objectness_loss += partial_objectness_loss[samples]
+
+                positive_indeces = gt_objectness[:,0]
+
+                self._object_proposal_loss(level_primitives, bb["box"], positive_indeces)
 
         return loss
 
-    def _object_proposal_loss(self, positive_detections, extraction_level):
-        
+    def _object_proposal_loss(self, level_primitives, gt_bbox, positive_indeces):
+        level_primitives.anchors
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
+
 class PSOutput:
     def __init__(
         self,
@@ -19,12 +20,12 @@ class PSOutput:
         bboxes,
         mask_logits,
     ):
-        self.semantic_logits = semantic_logits,
-        self.classes = classes,
-        self.bboxes = bboxes,
+        self.semantic_logits = (semantic_logits,)
+        self.classes = (classes,)
+        self.bboxes = (bboxes,)
         self.mask_logits = mask_logits
 
-        
+
 class FullModel(nn.Module):
     def __init__(
         self,
@@ -43,6 +44,7 @@ class FullModel(nn.Module):
         self.is_head = InstanceSegmentationHead(
             num_things, anchors, nms_threshold, activation
         )
+        self.apply(self._initialize_weights)
 
     def forward(self, inp):
         # Main and bottom-up
@@ -52,6 +54,22 @@ class FullModel(nn.Module):
 
         return PSOutput(semantic_logits, classes, bboxes, mask_logits)
 
+    def _initialize_weights(m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.xavier_uniform_(
+                m.weight, gain=nn.init.calculate_gain("leaky_relu")
+            )
+            nn.init.constant_(m.bias, 0.1)
+
+    def save_model(self, path, name="EPSFull"):
+        if not path.endswith("/"):
+            path = "{}/".format(path)
+        self.save("{}{}.pt".format(path, name))
+
+    def load_model(self, path, name="EPSFull"):
+        if not path.endswith("/"):
+            path = "{}/".format(path)
+        self.load("{}{}.pt".format(path, name))
 
 if __name__ == "__main__":
     anchors = torch.tensor(
@@ -59,9 +77,7 @@ if __name__ == "__main__":
     ).cuda()
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
-    out = full(
-        torch.rand(1, 3, 512, 1024).cuda()
-    )
+    out = full(torch.rand(1, 3, 512, 1024).cuda())
     # print(
     #     "semantic_logits, classes, bboxes, mask",
     #     semantic_logits.shape,

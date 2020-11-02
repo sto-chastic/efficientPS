@@ -4,6 +4,7 @@ import torch
 from ..dataset.dataset import DataSet
 from ..models.full import PSOutput
 
+
 class Core:
     def __init__(
         self,
@@ -11,10 +12,10 @@ class Core:
         root_folder_gt,
         cities_list,
         device,
-        batches = 1,
-        num_workers = 1,
+        batches=1,
+        num_workers=1,
         train: bool = True,
-        visdom = None
+        visdom=None,
     ):
         self.dataset = DataSet(
             root_folder_inp=root_folder_inp,
@@ -32,25 +33,15 @@ class Core:
         self.device = device
         self.train = train
 
-        if visdom is None:
-            try:
-                visdom = Visdom(raise_exceptions=True)
-            except ConnectionError:
-                print("Cannot connect to Visdom")
         self.visdom = visdom
+
 
 class Trainer(Core):
     def __init__(
         self,
-        root_folder_inp,
-        root_folder_gt,
-        cities_list,
         **kargs,
     ):
         super().__init__(
-            root_folder_inp=root_folder_inp,
-            root_folder_gt=root_folder_gt,
-            cities_list=cities_list,
             train=True,
             **kargs,
         )
@@ -81,22 +72,18 @@ class Trainer(Core):
                     if key not in losses:
                         losses[key] = 0.0
                     losses[key] += loss[key].item()
+
+                optimizer.step_scheduler(losses)
         return losses
 
 
 class Validator(Core):
     def __init__(
         self,
-        root_folder_inp,
-        root_folder_gt,
-        cities_list,
         **kargs,
     ):
         super().__init__(
-            root_folder_inp=root_folder_inp,
-            root_folder_gt=root_folder_gt,
-            cities_list=cities_list,
-            train=True,
+            train=False,
             **kargs,
         )
 
@@ -119,6 +106,7 @@ class Validator(Core):
                         losses[key] = 0.0
                     losses[key] += loss[key].item()
         return losses
+
 
 if __name__ == "__main__":
     run()

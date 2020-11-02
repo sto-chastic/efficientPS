@@ -11,7 +11,19 @@ from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
-
+ANCHORS = torch.tensor(
+        [
+            [0.0, 0.0, 100.0, 50.0],
+            [0.0, 0.0, 50.0, 100.0],
+            [0.0, 0.0, 75.0, 75.0],
+            [0.0, 0.0, 200.0, 100.0],
+            [0.0, 0.0, 100.0, 200.0],
+            [0.0, 0.0, 150.0, 150.0],
+            [0.0, 0.0, 400.0, 200.0],
+            [0.0, 0.0, 200.0, 400.0],
+            [0.0, 0.0, 300.0, 300.0],
+        ]
+    )
 class PSOutput:
     def __init__(
         self,
@@ -19,11 +31,15 @@ class PSOutput:
         classes,
         bboxes,
         mask_logits,
+        primitive_anchors,
+        primitive_objectness
     ):
-        self.semantic_logits = (semantic_logits,)
-        self.classes = (classes,)
-        self.bboxes = (bboxes,)
+        self.semantic_logits = semantic_logits
+        self.classes = classes
+        self.bboxes = bboxes
         self.mask_logits = mask_logits
+        self.primitive_anchors = primitive_anchors,
+        self.primitive_objectness = primitive_objectness
 
 
 class FullModel(nn.Module):
@@ -50,9 +66,9 @@ class FullModel(nn.Module):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
         semantic_logits = self.ss_head(p32, p16, p8, p4)
-        classes, bboxes, mask_logits = self.is_head(p32, p16, p8, p4)
+        classes, bboxes, mask_logits, primitive_anchors, primitive_objectness = self.is_head(p32, p16, p8, p4)
 
-        return PSOutput(semantic_logits, classes, bboxes, mask_logits)
+        return PSOutput(semantic_logits, classes, bboxes, mask_logits, primitive_anchors, primitive_objectness)
 
     def _initialize_weights(m):
         if isinstance(m, nn.Conv2d):

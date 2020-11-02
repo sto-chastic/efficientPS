@@ -177,8 +177,7 @@ class RegionProposalNetwork(nn.Module):
         self.activation = activation()
         self.nms_threshold = nms_threshold
         self.anchors = anchors  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
-        # torch.tensor([[0, -2.0, -2.0, 22.0, 22.0], [0, -2.0, -2.0, 22.0, 22.0]])
-        # First value corresponds to which image in the batch the anchor is applied to
+
         self.num_anchors = len(anchors)
 
         self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
@@ -194,10 +193,6 @@ class RegionProposalNetwork(nn.Module):
 
         anchors_correction = self.anchors_conv(x)  # Bx(4k)xHxW
         objectness = self.objectness_conv(x)  # BxKxHxW
-
-        anchor_position = torch.arange(0, 64).view(1, -1) * torch.arange(
-            0, 32
-        ).view(-1, 1)
 
         anchors_batch = torch.stack(batch * [self.anchors]).view(
             batch, self.num_anchors, 4, 1

@@ -49,7 +49,7 @@ class Trainer(Core):
     def __call__(
         self,
         model,
-        loss_fn,
+        loss_class,
         optimizer,
     ):
         model.train()
@@ -63,7 +63,8 @@ class Trainer(Core):
                 image = loaded_data.get_image()
                 optimizer.zero_grad()
                 inference = model(image)
-                loss = loss_fn(inference, loaded_data)
+                loss_fns = loss_class(loaded_data, inference)
+                loss = loss_fns.get_total_loss()
 
                 loss["total_loss"].backward()
 
@@ -90,7 +91,7 @@ class Validator(Core):
     def __call__(
         self,
         model,
-        loss_fn,
+        loss_class,
         optimizer,
     ):
         model.eval()
@@ -99,7 +100,8 @@ class Validator(Core):
             for loaded_data in self.loader:
                 image = loaded_data.get_image()
                 inference = model(image)
-                loss = loss_fn(inference, loaded_data)
+                loss_fns = loss_class(loaded_data, inference)
+                loss = loss_fns.get_total_loss()
 
                 for key, _ in loss.items():
                     if key not in losses:

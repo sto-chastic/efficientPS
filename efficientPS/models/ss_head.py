@@ -29,9 +29,9 @@ class SemanticSegmentationHead(nn.Module):
         self.up16 = nn.Upsample(scale_factor=16, mode="bilinear")
 
         self.conv_final = conv_1x1_bn_custom_act(
-            512, num_classes, activation=None
+            512, num_classes + 1, activation=None
         )
-        self.softmax = nn.Softmax(1)
+        self.softmax = nn.LogSoftmax(1)
 
     def make_large_scale_feature_extractor(self):
         convolutions = [

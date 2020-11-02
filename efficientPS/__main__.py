@@ -148,7 +148,7 @@ def train_world_models(
     for epoch in range(1, epochs + 1):
         train_loss = train(
             model=full_model,
-            loss_func=LossFunctions(),
+            loss_func=LossFunctions,
             optimizer=optimizer,
         )
 

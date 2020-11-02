@@ -1,6 +1,54 @@
 import torch
-
+import torch.nn as nn
+from .utilities import iou_function
+from ..models.utilities import convert_box_chw_to_vertices
 
 class LossFunctions:
-    def __init__(self):
-        pass
+    def __init__(self, ground_truth, inference):
+        self.ground_truth = ground_truth
+        self.inference = inference
+
+        self.objectness_thr = 0.5  # According to Mask R-CNN paper
+
+        self.first_stage_num_samples = 256  # According to EfficientPS paper
+
+    def ss_loss_max_pooling(self):
+        logits = self.inference.semantic_logits
+        (batch, num_classes, height, width) = logits.shape
+        nlll = nn.NLLLoss(reduction='none')
+        loss = nlll(logits, self.ground_truth.get_label_IDs())
+        
+        values, ind = torch.sort(loss.view(batch,-1), 1)
+
+        middle = int(val.shape[1] / 2)
+        top_quartile = int(middle + middle/2)
+
+        top_quartile_values = val[:, top_quartile]
+        mask = loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1)) * 4 / height / width
+
+        return torch.sum(loss*mask)/batch
+
+    def objectness_loss(self):
+        # TODO(David): This assumes batchsize 1, extend later if required
+        gt_bb = self.ground_truth.get_bboxes()
+        primitive_bb[i][0] = self.primitive_anchors
+        primitive_obj = self.primitive_objectness[0]
+
+        est_num_sumples_per_box = self.first_stage_num_samples // len(gt_bb)
+
+        objectness_loss = 0
+        for bb in gt_bb:
+            for i in range(4):
+                samples = random.sample(range(primitive_bb[i][0].shape[0]), est_num_sumples_per_box)
+
+                edges_bb = convert_box_chw_to_vertices(primitive_bb[i][0])
+                gt_objectness = iou_function(primitive_bb[i][0], bb["box"]).ge(self.objectness_thr)
+                partial_objectness_loss = gt_objectness * torch.log(primitive_obj) + (1 - gt_objectness) * torch.log(1 - primitive_obj)
+                objectness_loss += partial_objectness_loss[est_num_sumples_per_box]
+
+        return loss
+
+    def _object_proposal_loss(self, positive_detections, extraction_level):
+        
+
+if __name__ == "__main__":

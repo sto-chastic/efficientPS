@@ -8,7 +8,6 @@ from .utilities import (
     conv_1x1_bn,
 )
 
-
 class TwoWayFeaturePyramid(nn.Module):
     def __init__(self, activation=nn.LeakyReLU):
         super(TwoWayFeaturePyramid, self).__init__()

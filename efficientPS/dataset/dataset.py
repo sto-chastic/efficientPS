@@ -84,7 +84,7 @@ class PSSamples:
         self.gt_label_IDs_path = (gt_label_IDs_path,)
         self.gt_instance_IDs_path = (gt_instance_IDs_path,)
 
-    def get_bboxes(self):
+    def get_bboxes(self, scale=1 / 2):
         filtered_bboxes = []
         with open(self.gt_polygons_path[0]) as f:
             data = json.load(f)
@@ -94,7 +94,7 @@ class PSSamples:
                 filtered_bboxes.append(
                     {
                         "label": element["label"],
-                        "bbox": polygons_to_bboxes(element["polygon"]),
+                        "bbox": polygons_to_bboxes(element["polygon"], scale),
                     }
                 )
 

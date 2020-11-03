@@ -139,7 +139,7 @@ class ROIFeatureExtraction(nn.Module):
         extractions_by_batch = []
         for b in range(batches):
             joined_extractions = []
-            for nl in range(1, 4):
+            for nl in range(1, 5):
                 if len(anchors_per_level[nl]) == 0:
                     continue
                 joined_anchors_per_level_l = []
@@ -152,6 +152,8 @@ class ROIFeatureExtraction(nn.Module):
                     joined_anchors_per_level_l.append(anch[b].squeeze(1))
                     joined_scores_per_level_l.append(sc[b].squeeze(1))
 
+                if len(joined_anchors_per_level_l) == 0:
+                    continue
                 joined_anchors_per_level = torch.cat(
                     joined_anchors_per_level_l, 0
                 )

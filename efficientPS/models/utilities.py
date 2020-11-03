@@ -203,7 +203,7 @@ class RegionProposalNetwork(nn.Module):
         self.conv1 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
         self.bn1 = nn.BatchNorm2d(256)
 
-        self.anchors_conv = conv_1x1_bn(256, self.num_anchors * 4)
+        self.anchors_conv = conv_1x1_bn_custom_act(256, self.num_anchors * 4, nn.ReLU)
         self.objectness_conv = conv_1x1_bn_custom_act(256, self.num_anchors)
 
     def forward(self, x):

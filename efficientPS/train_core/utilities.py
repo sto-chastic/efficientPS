@@ -25,3 +25,10 @@ def iou_function(inputs, target):
     iou = interArea / (boxAArea + boxBArea - interArea + 1e-6)
 
     return iou
+
+
+def intersection(t1, t2):
+    indices = torch.zeros_like(t1)
+    for elem in t2:
+        indices = indices | (t1 == elem)
+    intersection = t1[indices]

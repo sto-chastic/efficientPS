@@ -165,8 +165,6 @@ def train_world_models(
 
             optimizer.save_state(state_dir=model_dir)
 
-        
-
 
 if __name__ == "__main__":
     train_world_models()

@@ -9,7 +9,7 @@ from .utilities import (
     RegionProposalNetwork,
     convert_box_chw_to_vertices,
     conv_1x1_bn_custom_act,
-    RegionProposalOutput
+    RegionProposalOutput,
 )
 
 
@@ -21,10 +21,10 @@ class ROIFeatureExtraction(nn.Module):
         # By  default  we  use  3  scales  and3 aspect ratios, yielding
         # k= 9anchors at each slidingposition.  For  a  convolutional
         # feature  map  of  a  sizeW×H(typically∼2,400), there are WHk anchors intotal.
-        self.rps_p32 = RegionProposalNetwork(anchors / 32, nms_threshold)
-        self.rps_p16 = RegionProposalNetwork(anchors / 16, nms_threshold)
-        self.rps_p8 = RegionProposalNetwork(anchors / 8, nms_threshold)
-        self.rps_p4 = RegionProposalNetwork(anchors / 4, nms_threshold)
+        self.rps_p32 = RegionProposalNetwork(anchors, 32, nms_threshold)
+        self.rps_p16 = RegionProposalNetwork(anchors, 16, nms_threshold)
+        self.rps_p8 = RegionProposalNetwork(anchors, 8, nms_threshold)
+        self.rps_p4 = RegionProposalNetwork(anchors, 4, nms_threshold)
 
         self.roi_align = RoIAlign((14, 14), spatial_scale=1, sampling_ratio=-1)
 
@@ -38,7 +38,7 @@ class ROIFeatureExtraction(nn.Module):
             self.rps_p32(p32),
             self.rps_p16(p16),
             self.rps_p8(p8),
-            self.rps_p4(p4)
+            self.rps_p4(p4),
         ]
 
         p32_anchors, p32_objectness = proposal_outputs[0].get_anch_obj()
@@ -53,7 +53,7 @@ class ROIFeatureExtraction(nn.Module):
             return [operation(x1, x2, *args) for x1, x2 in zip(l1, l2)]
 
         # Scale properly
-        
+
         scaled_anchors = [
             apply_to_batches(p32_anchors, torch.mul, 32),
             apply_to_batches(p16_anchors, torch.mul, 16),
@@ -236,7 +236,9 @@ class InstanceSegmentationHead(nn.Module):
         return nn.Sequential(*convolutions)
 
     def forward(self, p32, p16, p8, p4):
-        extracted_features_, primitive_anchors = self.roi_features(p32, p16, p8, p4)
+        extracted_features_, primitive_anchors = self.roi_features(
+            p32, p16, p8, p4
+        )
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(
             shape_[0], shape_[1], -1

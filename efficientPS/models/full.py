@@ -11,14 +11,10 @@ from .fpn import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
+
 class PSOutput:
     def __init__(
-        self,
-        semantic_logits,
-        classes,
-        bboxes,
-        mask_logits,
-        primitive_anchors
+        self, semantic_logits, classes, bboxes, mask_logits, primitive_anchors
     ):
         self.semantic_logits = semantic_logits
         self.classes = classes
@@ -51,9 +47,13 @@ class FullModel(nn.Module):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
         semantic_logits = self.ss_head(p32, p16, p8, p4)
-        classes, bboxes, mask_logits, primitive_anchors = self.is_head(p32, p16, p8, p4)
+        classes, bboxes, mask_logits, primitive_anchors = self.is_head(
+            p32, p16, p8, p4
+        )
 
-        return PSOutput(semantic_logits, classes, bboxes, mask_logits, primitive_anchors)
+        return PSOutput(
+            semantic_logits, classes, bboxes, mask_logits, primitive_anchors
+        )
 
     @staticmethod
     def _initialize_weights(m):
@@ -72,6 +72,7 @@ class FullModel(nn.Module):
         if not path.endswith("/"):
             path = "{}/".format(path)
         self.load("{}{}.pt".format(path, name))
+
 
 if __name__ == "__main__":
     anchors = torch.tensor(

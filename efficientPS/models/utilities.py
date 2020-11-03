@@ -4,6 +4,7 @@ from torchvision.ops import nms
 
 from . import *
 
+
 def outputSize(in_size, kernel_size, stride, padding):
     output = int((in_size - kernel_size + 2 * padding) / stride) + 1
     return output
@@ -12,17 +13,19 @@ def outputSize(in_size, kernel_size, stride, padding):
 # def outputSizeDeconv(in_size, kernel_size, stride, padding, output_padding):
 #     return int((in_size-1)*stride-2*padding+(kernel_size-1)+output_padding+1)
 
+
 class RegionProposalOutput:
     def __init__(self):
         self.scale = 0
-        self.x_position = None # 1x1xHx1
-        self.y_position = None  # 1x1x1xW
-        self.original_anchors = None  # BxKx4x1
         self.anchors = None  # List[(w*h*K)x4, ..., (w*h*K)x4]  len = batch
         self.objectness = None  # List[(w*h*K)x1, ..., (w*h*K)x1]  len = batch
+        self.transformations = (
+            None  # List[(w*h*K)x1, ..., (w*h*K)x1]  len = batch
+        )
 
     def get_anch_obj(self):
         return self.anchors, self.objectness
+
 
 class DepthSeparableConv2d(nn.Module):
     def __init__(
@@ -184,11 +187,16 @@ class DensePredictionCell(nn.Module):
 
 
 class RegionProposalNetwork(nn.Module):
-    def __init__(self, anchors, nms_threshold=0.7, activation=nn.LeakyReLU):
+    def __init__(
+        self, anchors, scale, nms_threshold=0.7, activation=nn.LeakyReLU
+    ):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
         self.nms_threshold = nms_threshold
-        self.anchors = anchors  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
+        self.anchors = (
+            anchors / scale
+        )  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
+        self.scale = scale
 
         self.num_anchors = len(anchors)
 
@@ -220,18 +228,20 @@ class RegionProposalNetwork(nn.Module):
             torch.arange(0, width).view(1, 1, 1, width).to(x.device)
         )
 
-        pos_operations = torch.zeros_like(anchors_correction)
+        transformations = torch.zeros_like(anchors_correction)
 
-        pos_operations[:, :, 0, ...] = (
-            pos_operations[:, :, 0, ...] + x_bb_position
+        transformations[:, :, 0, ...] = (
+            transformations[:, :, 0, ...] + x_bb_position
         )
-        pos_operations[:, :, 1, ...] = (
-            pos_operations[:, :, 1, ...] + y_bb_position
+        transformations[:, :, 1, ...] = (
+            transformations[:, :, 1, ...] + y_bb_position
         )
 
-        anchors_correction += pos_operations
+        anchors_correction += transformations
 
-        pos_operations[:, :, 2:, ...] = pos_operations[:, :, 2:, ...] * anchors_batch[:, :, 2:, ...]
+        transformations[:, :, 2:, ...] = (
+            transformations[:, :, 2:, ...] + anchors_batch[:, :, 2:, ...]
+        )
 
         corrected_position = (
             anchors_correction[:, :, :2, ...] + anchors_batch[:, :, :2, ...]
@@ -243,13 +253,7 @@ class RegionProposalNetwork(nn.Module):
 
         corrected_anchors = torch.cat(
             (corrected_position, corrected_size), 2
-        )  # BxKx4x(w*h)
-
-        output = RegionProposalOutput()
-        output.x_position = x_bb_position
-        output.y_position = y_bb_position
-        output.original_anchors = anchors_batch
-
+        )  # BxKx4xWxH
 
         format_anchors = (
             corrected_anchors.permute((0, 2, 1, 3, 4))
@@ -264,6 +268,12 @@ class RegionProposalNetwork(nn.Module):
             .permute((0, 2, 1))
         )
 
+        transformations = (
+            transformations.permute((0, 2, 1, 3, 4))
+            .reshape(batch, 4, -1)
+            .permute((0, 2, 1))
+        )
+
         list_anchors = [
             x.squeeze() for x in torch.chunk(format_anchors, batch)
         ]  # List[(w*h*K)x4, ..., (w*h*K)x4]  len = batch
@@ -271,13 +281,38 @@ class RegionProposalNetwork(nn.Module):
         list_objectness = [
             x.squeeze() for x in torch.chunk(format_objectness, batch)
         ]  # List[(w*h*K)x1, ..., (w*h*K)x1]  len = batch
+
+        list_transformations = [
+            x.squeeze() for x in torch.chunk(transformations, batch)
+        ]  # List[(w*h*K)x1, ..., (w*h*K)x1]  len = batch
+
+        output = RegionProposalOutput()
+
+        output.scale = self.scale
         output.anchors = list_anchors
         output.objectness = list_objectness
+        output.transformations = list_transformations
         return output
 
 
-def convert_box_vertices_to_cwh():
-    pass
+def convert_box_vertices_to_cwh(bbox):
+    if not isinstance(bbox, torch.Tensor):
+        bbox = torch.tensor(
+            [
+                bbox[0][0],
+                bbox[0][1],
+                bbox[1][0],
+                bbox[1][1],
+            ]
+        )
+
+    vt = torch.zeros_like(bbox)
+    vt[..., 2] = bbox[..., 2] - bbox[..., 0]
+    vt[..., 3] = bbox[..., 3] - bbox[..., 1]
+    vt[..., 0] = bbox[..., 0] + vt[..., 2]
+    vt[..., 1] = bbox[..., 1] - vt[..., 3]
+
+    return vt
 
 
 def convert_box_chw_to_vertices(bbox):
@@ -293,6 +328,6 @@ if __name__ == "__main__":
     # dpc = DensePredictionCell()
     # out = dpc(torch.rand(3, 256, 32, 64))
     # print("out", out.shape)
-    rpn = RegionProposalNetwork(ANCHORS)
+    rpn = RegionProposalNetwork(ANCHORS, 32)
     out = rpn(torch.rand(3, 256, 32, 64))
     print("out", out.shape)

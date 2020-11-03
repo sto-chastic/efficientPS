@@ -219,7 +219,7 @@ class InstanceSegmentationHead(nn.Module):
         convolutions = [
             nn.Conv1d(1024, num_things+1, 1, 1),
             nn.BatchNorm1d(num_things+1),
-            activation(dim=2),
+            activation(dim=1),
         ]
         return nn.Sequential(*convolutions)
 

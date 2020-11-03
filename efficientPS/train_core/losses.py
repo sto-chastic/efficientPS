@@ -171,12 +171,12 @@ class LossFunctions:
 
         objectness = []
         ious = []
-        inference_bb = self.inference.proposed_bboxes
+        proposed_bboxes = self.inference.proposed_bboxes
         inference_classes = self.inference.classes
 
         classesl = []
         for bb in gt_bb:
-            edges_bb = convert_box_chw_to_vertices(inference_bb[0])
+            edges_bb = convert_box_chw_to_vertices(proposed_bboxes[0])
             iou = iou_function(edges_bb, bb["bbox"])
             gt_objectness = iou.ge(self.objectness_thr)
 
@@ -190,7 +190,56 @@ class LossFunctions:
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
-        gt_class = selected_class*objectness_gt  # Class 0 is empty
+        gt_class = selected_class*objectness_gt  # Class 0 is empty bbox, background
+
+        one_hot_targets = nn.functional.one_hot(gt_class, num_classes=len(THINGS)+1).permute(1, 0)
+
+        nlll = nn.NLLLoss(reduction="none")
+        
+        loss = nlll(inference_classes.permute(0, 1, 2), gt_class.unsqueeze_(0))
+        if loss.shape[0] > self.second_stage_num_samples:
+            samples = random.sample(
+                range(loss.shape[0]), self.second_stage_num_samples
+            )  # According to the paper, only sample 512 elements
+
+            total_loss = torch.sum(loss[samples]) / self.second_stage_num_samples
+        else:
+            total_loss = torch.sum(loss)
+
+        return total_loss
+
+    def regression_loss(self):
+        # TODO(David): This assumes batchsize 1, extend later if required
+        gt_bb = self.ground_truth.get_bboxes()
+
+        objectness = []
+        ious = []
+        proposed_bboxes = self.inference.proposed_bboxes
+        inference_bboxes = self.inference.bboxes
+        inference_classes = torch.exp(self.inference.classes)
+
+        renorm_inference_classes = inference_classes[:, 1:, :] / torch.sum(inference_classes[:, 1:, :], dim=1)
+
+        selected_inference_bb = inference_bboxes.index_select(1, renorm_inference_classes.argmax(dim=1)[0])
+        # TODO(David): Fix this index select so that it does not broadcast
+        gt_bboxesl = []
+        for bb in gt_bb:
+            edges_bb = convert_box_chw_to_vertices(proposed_bboxes[0])
+            iou = iou_function(edges_bb, bb["bbox"])
+            gt_objectness = iou.ge(self.objectness_thr)
+
+            objectness.append(gt_objectness)
+            ious.append(iou)
+            gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
+
+        closest_iou = torch.stack(ious).argmax(dim=0)
+        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device)
+        gt_bboxes = gt_bboxes_stack.index_select(0, closest_iou)
+
+        objectness_stack = torch.stack(objectness)
+        objectness_gt = objectness_stack.sum(0).ge(1)
+
+        
 
         one_hot_targets = nn.functional.one_hot(gt_class, num_classes=len(THINGS)+1).permute(1, 0)
 
@@ -232,3 +281,4 @@ if __name__ == "__main__":
     lf.roi_proposal_regression()
     lf.roi_proposal_objectness()
     lf.classification_loss()
+    lf.regression_loss()

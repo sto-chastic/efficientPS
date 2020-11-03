@@ -4,12 +4,12 @@ import torch
 import torch.nn as nn
 
 from ..dataset.dataset import DataSet
+from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_ID
 from ..models import *
 from ..models.full import FullModel, PSOutput
 from ..models.utilities import (convert_box_chw_to_vertices,
                                 convert_box_vertices_to_cwh)
 from .utilities import intersection, iou_function
-
 
 class LossFunctions:
     def __init__(self, ground_truth, inference):
@@ -18,8 +18,10 @@ class LossFunctions:
 
         self.objectness_thr = 0.5  # According to Mask R-CNN paper
 
-        self.first_stage_num_samples = 256  # According to EfficientPS paper
-                                            # only sample 256 elements
+        self.first_stage_num_samples = 256   # According to EfficientPS paper
+                                             # only sample 256 elements
+        self.second_stage_num_samples = 512  # According to EfficientPS paper
+                                             # only sample 512 elements
 
     def ss_loss_max_pooling(self):
         logits = self.inference.semantic_logits
@@ -165,95 +167,47 @@ class LossFunctions:
         return loss
 
     def classification_loss(self):
+        # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
+
+        total_loss = 0.0
+        objectness = []
+        ious = []
+        inference_bb = self.inference.proposed_bboxes
+        inference_classes = self.inference.classes
+
+        classesl = []
         for bb in gt_bb:
-            inference_edges_bb = convert_box_chw_to_vertices(self.inference.bboxes)
-            positive_matches = iou_function(inference_edges_bb, bb["box"]).ge(
-                self.objectness_thr
-            )
-    # @staticmethod
-    # def _bb_proposal_objectness(gt_objectness, objectness, samples):
-    #     partial_objectness_loss = gt_objectness * torch.log(primitive_obj) + (
-    #         1 - gt_objectness
-    #     ) * torch.log(1 - primitive_obj)
-    #     return partial_objectness_loss[samples]
+            edges_bb = convert_box_chw_to_vertices(inference_bb[0])
+            iou = iou_function(edges_bb, bb["bbox"])
+            gt_objectness = iou.ge(self.objectness_thr)
 
-    # @staticmethod
-    # def _bb_proposal_regression(
-    #     anchors_bb, transformations, bb, positive_indeces
-    # ):
-    #     def bb_parametrization(anchors):
-    #         param = torch.zeros_like(anchors)
-    #         param[:, :2] = (
-    #             anchors[:, :2] - transformations[:, :2]
-    #         ) / transformations[:, 2:]
-    #         param[:, 2:] = torch.log(anchors[:, 2:] / transformations[:, 2:])
-    #         return param
+            objectness.append(gt_objectness)
+            ious.append(iou)
+            classesl.append(THINGS_TO_ID[bb["label"]])
 
-    #     param_anchors = bb_parametrization(
-    #         convert_box_vertices_to_cwh(anchors_bb)
-    #     )
+        classes = torch.tensor(classesl).to(iou.device)
+        closest_iou = torch.stack(ious).argmax(dim=0)
+        selected_class = classes.index_select(0, closest_iou)
+        objectness_stack = torch.stack(objectness)
+        objectness_gt = objectness_stack.sum(0).ge(1)
 
-    #     bb_tensor = torch.zeros_like(anchors_bb) + convert_box_vertices_to_cwh(
-    #         bb
-    #     ).to(anchors_bb.device)
-    #     param_bb = bb_parametrization(bb_tensor)
+        one_hot_targets = nn.functional.one_hot(selected_class, num_classes=len(THINGS))
+        #ACCount for the extra label in the output for objectness
+        loss = self._bb_proposal_objectness(objectness_gt, primitive_obj[0])
+        
+        if objectness_gt.shape[0] > num_samples_per_stage:
+            samples = random.sample(
+                range(objectness_gt.shape[0]), num_samples_per_stage
+            )  # According to the paper, only sample 256 elements
 
-    #     l1 = nn.SmoothL1Loss(reduction="none")  # According to Fast R-CNN paper
-    #     loss = l1(param_anchors, param_bb)
-
-    #     return torch.sum(loss.index_select(0, positive_indeces)), torch.shape(
-    #         positive_indeces
-    #     )
-    # def _first_stage_loss(self):
-    #     # TODO(David): This assumes batchsize 1, extend later if required
-    #     gt_bb = self.ground_truth.get_bboxes()
-
-    #     # How many samples, positive and negative, per bbox we sample
-    #     num_samples_per_box_stage = (
-    #         self.first_stage_num_samples // len(gt_bb) // 4
-    #     )
-
-    #     objectness_loss = 0
-    #     regression_loss = 0
-    #     for bb in gt_bb:
-    #         for i in range(4):
-    #             level_primitives = self.primitive_anchors[i]
-    #             primitive_bb = level_primitives.anchors
-    #             primitive_obj = level_primitives.objectness
-    #             primitive_transformations = level_primitives.transformations
-
-    #             samples = random.sample(
-    #                 range(primitive_bb[0].shape[0]), num_samples_per_box_stage
-    #             )
-
-    #             edges_bb = convert_box_chw_to_vertices(primitive_bb[0])
-    #             gt_objectness = iou_function(edges_bb, bb["box"]).ge(
-    #                 self.objectness_thr
-    #             )
-
-    #             positive_indeces = gt_objectness[:, 0].nonzero()
-
-    #             objectness_loss += self._bb_proposal_objectness(
-    #                 gt_objectness, primitive_obj, samples
-    #             )
-
-    #             regression_loss += self._bb_proposal_regression(
-    #                 primitive_bb[0],
-    #                 primitive_transformations[0],
-    #                 bb["box"],
-    #                 intersection(positive_indeces, samples),
-    #             )
-
-    #     return (
-    #         objectness_loss / num_samples_per_box_stage * 4,
-    #         regression_loss / num_samples_per_box_stage * 4,
-    #     )
+            total_loss += torch.sum(loss[samples])
+        else:
+            total_loss += torch.sum(loss)
 
 
+        return total_loss / num_samples_per_stage / 4
 
-    # @staticmethod
-    # def _bb_class_loss()
 
 
 
@@ -271,9 +225,10 @@ if __name__ == "__main__":
     instances_IDs = ds.samples_path[0].get_instances_IDs()
     image = ds.samples_path[0].get_image(scale=1 / 8)
 
-    full = FullModel(11, 8, anchors, 0.6).cuda()
+    full = FullModel(len(THINGS), len(STUFF), anchors, 0.6).cuda()
     out = full(image.unsqueeze(0).float().cuda())
 
     lf = LossFunctions(ds.samples_path[0], out)
     lf.roi_proposal_regression()
     lf.roi_proposal_objectness()
+    lf.classification_loss()

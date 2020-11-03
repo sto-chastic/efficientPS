@@ -14,12 +14,13 @@ from .is_head import InstanceSegmentationHead
 
 class PSOutput:
     def __init__(
-        self, semantic_logits, classes, bboxes, mask_logits, primitive_anchors
+        self, semantic_logits, classes, bboxes, mask_logits, proposed_bboxes, primitive_anchors
     ):
         self.semantic_logits = semantic_logits
         self.classes = classes
         self.bboxes = bboxes
         self.mask_logits = mask_logits
+        self.proposed_bboxes = proposed_bboxes
         self.primitive_anchors = primitive_anchors
 
 
@@ -47,12 +48,12 @@ class FullModel(nn.Module):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
         semantic_logits = self.ss_head(p32, p16, p8, p4)
-        classes, bboxes, mask_logits, primitive_anchors = self.is_head(
+        classes, bboxes, mask_logits, proposed_bboxes, primitive_anchors = self.is_head(
             p32, p16, p8, p4
         )
 
         return PSOutput(
-            semantic_logits, classes, bboxes, mask_logits, primitive_anchors
+            semantic_logits, classes, bboxes, mask_logits, proposed_bboxes, primitive_anchors
         )
 
     @staticmethod

@@ -102,12 +102,12 @@ THINGS = [
 ]
 
 THINGS_TO_ID = {
-    "car": 0,
-    "bicycle": 1,
-    "bus":2,
-    "truck":3,
-    "train":4,
-    "motorcycle":5,
-    "person":6,
-    "rider":7,
+    "car": 1,
+    "bicycle": 2,
+    "bus":3,
+    "truck":4,
+    "train":5,
+    "motorcycle":6,
+    "person":7,
+    "rider":8,
 }

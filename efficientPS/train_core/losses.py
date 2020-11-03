@@ -80,12 +80,11 @@ class LossFunctions:
                     range(objectness_gt.shape[0]), num_samples_per_stage
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples])
+                total_loss += torch.sum(loss[samples]) / num_samples_per_stage
             else:
                 total_loss += torch.sum(loss)
 
-
-        return total_loss / num_samples_per_stage / 4
+        return total_loss
 
     @staticmethod
     def _bb_proposal_objectness(gt_objectness, objectness):
@@ -140,11 +139,11 @@ class LossFunctions:
                     range(bboxes.shape[0]), num_samples_per_stage
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples])
+                total_loss += torch.sum(loss[samples]) / num_samples_per_stage
             else:
                 total_loss += torch.sum(loss)
 
-        return total_loss / num_samples_per_stage / 4
+        return total_loss 
 
     @staticmethod
     def _bb_proposal_regression(
@@ -170,7 +169,6 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
 
-        total_loss = 0.0
         objectness = []
         ious = []
         inference_bb = self.inference.proposed_bboxes
@@ -192,21 +190,23 @@ class LossFunctions:
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
-        one_hot_targets = nn.functional.one_hot(selected_class, num_classes=len(THINGS))
-        #ACCount for the extra label in the output for objectness
-        loss = self._bb_proposal_objectness(objectness_gt, primitive_obj[0])
+        gt_class = selected_class*objectness_gt  # Class 0 is empty
+
+        one_hot_targets = nn.functional.one_hot(gt_class, num_classes=len(THINGS)+1).permute(1, 0)
+
+        nlll = nn.NLLLoss(reduction="none")
         
-        if objectness_gt.shape[0] > num_samples_per_stage:
+        loss = nlll(inference_classes.permute(0, 1, 2), gt_class.unsqueeze_(0))
+        if loss.shape[0] > self.second_stage_num_samples:
             samples = random.sample(
-                range(objectness_gt.shape[0]), num_samples_per_stage
-            )  # According to the paper, only sample 256 elements
+                range(loss.shape[0]), self.second_stage_num_samples
+            )  # According to the paper, only sample 512 elements
 
-            total_loss += torch.sum(loss[samples])
+            total_loss = torch.sum(loss[samples]) / self.second_stage_num_samples
         else:
-            total_loss += torch.sum(loss)
+            total_loss = torch.sum(loss)
 
-
-        return total_loss / num_samples_per_stage / 4
+        return total_loss
 
 
 

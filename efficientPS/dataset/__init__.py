@@ -101,7 +101,7 @@ THINGS = [
     "rider",
 ]
 
-THINGS_TO_ID = {
+THINGS_TO_THINGS_ID = {
     "car": 1,
     "bicycle": 2,
     "bus":3,
@@ -111,3 +111,14 @@ THINGS_TO_ID = {
     "person":7,
     "rider":8,
 }
+
+# ID_TO_THINGS_ID = {
+#     26: 1,
+#     33: 2,
+#     28:3,
+#     27:4,
+#     31:5,
+#     32:6,
+#     24:7,
+#     "rider":8,
+# }

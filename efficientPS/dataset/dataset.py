@@ -42,6 +42,7 @@ class PSSamples:
         return torch_image.unsqueeze(0)
 
     def get_instances_IDs(self):
+        # TODO(David): get labels from here 
         image = cv2.imread(self.gt_instance_IDs_path[0], cv2.IMREAD_GRAYSCALE)
         torch_image = torch.tensor(image)
         return torch_image.unsqueeze(0)

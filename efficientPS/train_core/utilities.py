@@ -1,5 +1,5 @@
 import torch
-
+from ..dataset import THINGS_TO_THINGS_ID,ID_TO_LABELS
 
 def iou_function(inputs, target):
     def custom_max(tensor, value):
@@ -40,3 +40,15 @@ def index_select2D(original, index1, index2=None):
     if not index2:
         index2 = torch.arange(0, index1.shape[0])
     return torch.cat([original[:, :, x, y].unsqueeze(0) for x, y in zip(index1, index2)])
+
+def id_to_things_id_expanded(id_):
+    things_id = torch.zeros_like(id_) * torch.zeros((len(THINGS_TO_THINGS_ID)+1, 1, 1)).to(id_.device)
+
+    for k, v in ID_TO_LABELS.items():
+        if v[0] in THINGS_TO_THINGS_ID:
+            new_id = THINGS_TO_THINGS_ID[v[0]]
+            
+            things_id[new_id, ...] = id_.eq(k)
+        
+
+    return things_id

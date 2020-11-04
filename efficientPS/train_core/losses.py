@@ -4,12 +4,12 @@ import torch
 import torch.nn as nn
 
 from ..dataset.dataset import DataSet
-from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_ID
+from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
 from ..models import *
 from ..models.full import FullModel, PSOutput
 from ..models.utilities import (convert_box_chw_to_vertices,
                                 convert_box_vertices_to_cwh,)
-from .utilities import intersection, iou_function, index_select2D
+from .utilities import intersection, iou_function, index_select2D, id_to_things_id_expanded
 
 class LossFunctions:
     def __init__(self, ground_truth, inference):
@@ -185,7 +185,7 @@ class LossFunctions:
 
             objectness.append(gt_objectness)
             ious.append(iou)
-            classesl.append(THINGS_TO_ID[bb["label"]])
+            classesl.append(THINGS_TO_THINGS_ID[bb["label"]])
 
         classes = torch.tensor(classesl).to(iou.device)
         closest_iou = torch.stack(ious).argmax(dim=0)
@@ -258,7 +258,8 @@ class LossFunctions:
 
         return total_loss
 
-
+    def mask_loss(self):
+        id_to_things_id_expanded(self.ground_truth.get_instances_IDs())
 
 
 
@@ -283,3 +284,4 @@ if __name__ == "__main__":
     lf.roi_proposal_objectness()
     lf.classification_loss()
     lf.regression_loss()
+    lf.mask_loss()

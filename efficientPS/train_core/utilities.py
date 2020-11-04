@@ -32,3 +32,11 @@ def intersection(t1, t2):
     for elem in t2:
         indices = indices | (t1 == elem)
     intersection = t1[indices]
+
+
+def index_select2D(original, index1, index2=None):
+    #  Not in Pytorch, proposed here:
+    #  discuss.pytorch.org/t/how-to-select-index-over-two-dimension/10098/4
+    if not index2:
+        index2 = torch.arange(0, index1.shape[0])
+    return torch.cat([original[:, :, x, y].unsqueeze(0) for x, y in zip(index1, index2)])

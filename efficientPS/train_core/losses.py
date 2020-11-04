@@ -8,8 +8,8 @@ from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_ID
 from ..models import *
 from ..models.full import FullModel, PSOutput
 from ..models.utilities import (convert_box_chw_to_vertices,
-                                convert_box_vertices_to_cwh)
-from .utilities import intersection, iou_function
+                                convert_box_vertices_to_cwh,)
+from .utilities import intersection, iou_function, index_select2D
 
 class LossFunctions:
     def __init__(self, ground_truth, inference):
@@ -132,7 +132,7 @@ class LossFunctions:
             gt_bboxes = gt_bboxes_raw.index_select(0, positives_index[:,0])
             transf = primitive_transformations[0].index_select(0, positives_index[:,1])
 
-            loss = self._bb_proposal_regression(bboxes, gt_bboxes, transf)
+            loss = self._bb_regression(bboxes, gt_bboxes, transf)
 
             if bboxes.shape[0] > num_samples_per_stage:
                 samples = random.sample(
@@ -146,15 +146,18 @@ class LossFunctions:
         return total_loss 
 
     @staticmethod
-    def _bb_proposal_regression(
+    def _bb_regression(
         bboxes, gt_bboxes, transformations,
     ):
+        smooth = 1e-3
         def bb_parametrization(anchors):
             param = torch.zeros_like(anchors)
             param[:, :2] = (
                 anchors[:, :2] - transformations[:, :2]
-            ) / transformations[:, 2:]
-            param[:, 2:] = torch.log(anchors[:, 2:] / transformations[:, 2:])
+            ) / (transformations[:, 2:] + smooth)
+
+            log_arg = anchors[:, 2:] / (transformations[:, 2:] + smooth)
+            param[:, 2:] = torch.log(torch.clamp(log_arg, min=smooth))
             return param
 
         gt_bboxes_param = bb_parametrization(gt_bboxes)
@@ -163,7 +166,7 @@ class LossFunctions:
         l1 = nn.SmoothL1Loss(reduction="none")  # According to Fast R-CNN paper
         loss = l1(gt_bboxes_param, bboxes_param)
 
-        return loss
+        return torch.sum(loss, dim=1)
 
     def classification_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
@@ -220,11 +223,14 @@ class LossFunctions:
 
         renorm_inference_classes = inference_classes[:, 1:, :] / torch.sum(inference_classes[:, 1:, :], dim=1)
 
-        selected_inference_bb = inference_bboxes.index_select(1, renorm_inference_classes.argmax(dim=1)[0])
-        # TODO(David): Fix this index select so that it does not broadcast
+        selected_inference_bb = index_select2D(
+            inference_bboxes.permute(0, 2, 1, 3),
+            renorm_inference_classes.argmax(dim=1)[0]
+        ).permute(1, 0, 2)
+
         gt_bboxesl = []
         for bb in gt_bb:
-            edges_bb = convert_box_chw_to_vertices(proposed_bboxes[0])
+            edges_bb = convert_box_chw_to_vertices(selected_inference_bb[0])
             iou = iou_function(edges_bb, bb["bbox"])
             gt_objectness = iou.ge(self.objectness_thr)
 
@@ -239,13 +245,8 @@ class LossFunctions:
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
-        
-
-        one_hot_targets = nn.functional.one_hot(gt_class, num_classes=len(THINGS)+1).permute(1, 0)
-
-        nlll = nn.NLLLoss(reduction="none")
-        
-        loss = nlll(inference_classes.permute(0, 1, 2), gt_class.unsqueeze_(0))
+        loss = self._bb_regression(selected_inference_bb[0], gt_bboxes, proposed_bboxes[0])
+        loss = loss.masked_select(objectness_gt)
         if loss.shape[0] > self.second_stage_num_samples:
             samples = random.sample(
                 range(loss.shape[0]), self.second_stage_num_samples
@@ -278,7 +279,7 @@ if __name__ == "__main__":
     out = full(image.unsqueeze(0).float().cuda())
 
     lf = LossFunctions(ds.samples_path[0], out)
-    lf.roi_proposal_regression()
+    # lf.roi_proposal_regression()
     lf.roi_proposal_objectness()
     lf.classification_loss()
     lf.regression_loss()

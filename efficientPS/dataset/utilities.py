@@ -1,7 +1,7 @@
-def polygons_to_bboxes(polygons, scale = 1):
+def polygons_to_bboxes(polygons, offset = [0, 0]):
     x_coordinates, y_coordinates = zip(*polygons)
 
     return [
-        (min(x_coordinates) * scale, min(y_coordinates) * scale),
-        (max(x_coordinates) * scale, max(y_coordinates) * scale),
+        (min(x_coordinates) - offset[0], min(y_coordinates) - offset[1]),
+        (max(x_coordinates) - offset[0], max(y_coordinates) - offset[1]),
     ]

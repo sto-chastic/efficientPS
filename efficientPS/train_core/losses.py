@@ -2,6 +2,7 @@ import random
 
 import torch
 import torch.nn as nn
+from torchvision.ops import RoIAlign
 
 from ..dataset.dataset import DataSet
 from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
@@ -27,16 +28,16 @@ class LossFunctions:
         logits = self.inference.semantic_logits
         (batch, num_classes, height, width) = logits.shape
         nlll = nn.NLLLoss(reduction="none")
-        loss = nlll(logits, self.ground_truth.get_label_IDs())
+        loss = nlll(logits, self.ground_truth.get_label_IDs().to(logits.device))
 
         values, ind = torch.sort(loss.view(batch, -1), 1)
 
-        middle = int(val.shape[1] / 2)
+        middle = int(values.shape[1] / 2)
         top_quartile = int(middle + middle / 2)
 
-        top_quartile_values = val[:, top_quartile]
+        top_quartile_values = values[:, top_quartile]
         mask = (
-            loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1))
+            loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1)).float()
             * 4
             / height
             / width
@@ -215,8 +216,6 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
 
-        objectness = []
-        ious = []
         proposed_bboxes = self.inference.proposed_bboxes
         inference_bboxes = self.inference.bboxes
         inference_classes = torch.exp(self.inference.classes)
@@ -228,6 +227,8 @@ class LossFunctions:
             renorm_inference_classes.argmax(dim=1)[0]
         ).permute(1, 0, 2)
 
+        objectness = []
+        ious = []
         gt_bboxesl = []
         for bb in gt_bb:
             edges_bb = convert_box_chw_to_vertices(selected_inference_bb[0])
@@ -259,9 +260,64 @@ class LossFunctions:
         return total_loss
 
     def mask_loss(self):
-        id_to_things_id_expanded(self.ground_truth.get_instances_IDs())
+        # TODO(David): This assumes batchsize 1, extend later if required
+        gt_bb = self.ground_truth.get_bboxes()
+        mask_logits = self.inference.mask_logits
+        proposed_bboxes = self.inference.proposed_bboxes
+        gt_mask_seg = id_to_things_id_expanded(self.ground_truth.get_label_IDs())
+        gt_mask_seg = gt_mask_seg.to(mask_logits.device)
+
+        objectness = []
+        gt_bboxesl = []
+        ious = []
+        gt_classes = []
+        for bb in gt_bb:
+            edges_bb = convert_box_chw_to_vertices(proposed_bboxes[0])
+            iou = iou_function(edges_bb, bb["bbox"])
+            gt_classes.append(THINGS_TO_THINGS_ID[bb["label"]])
+            gt_objectness = iou.ge(self.objectness_thr)
+
+            objectness.append(gt_objectness)
+            ious.append(iou)
+            gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
 
 
+        closest_iou = torch.stack(ious).argmax(dim=0)
+        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device)
+        gt_bboxes = gt_bboxes_stack.index_select(0, closest_iou)
+        gt_classes = torch.tensor(gt_classes, device=iou.device).index_select(0, closest_iou)
+
+        gt_bb_classes = torch.cat([gt_classes.unsqueeze(1), gt_bboxes], dim=1)
+        
+        objectness_stack = torch.stack(objectness)
+        objectness_gt = objectness_stack.sum(0).ge(1)
+
+        # gt_bb_classes = gt_bb_classes.index_select(0, objectness_gt.nonzero()[:,0])
+        # mask_logits = mask_logits.index_select(1, objectness_gt.nonzero()[:,0])
+        gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
+
+        selected_mask = index_select2D(
+            mask_logits.permute(0, 3, 4, 2, 1),
+            gt_classes - 1
+        )
+
+        loss = self._cross_entropy(selected_mask, gt_masks)
+        return torch.sum(loss.index_select(0, objectness_gt.nonzero()[:,0]))
+
+
+    @staticmethod
+    def _extract_mask_from_gt(full_mask, bb_and_classes):
+        binarize_threshold = 0.7
+        roi = RoIAlign((28, 28), spatial_scale=1, sampling_ratio=-1)
+        extracted = roi(full_mask.unsqueeze(1), bb_and_classes.float())
+        return extracted.ge(binarize_threshold)
+        
+    @staticmethod
+    def _cross_entropy(inference, gt):
+        loss = gt * torch.log(inference) + (
+            ~gt
+        ) * torch.log(1 - inference)
+        return -loss
 
 if __name__ == "__main__":
     anchors = ANCHORS.cuda()
@@ -270,17 +326,17 @@ if __name__ == "__main__":
         root_folder_inp="efficientPS/data/left_img/leftImg8bit/train",
         root_folder_gt="efficientPS/data/gt/gtFine/train",
         cities_list=["aachen"],
+        crop=[128, 256]
     )
-    boxes = ds.samples_path[0].get_bboxes(scale=1 / 8)
-    IDs = ds.samples_path[0].get_label_IDs()
-    instances_IDs = ds.samples_path[0].get_instances_IDs()
-    image = ds.samples_path[0].get_image(scale=1 / 8)
+    boxes = ds.samples_path[0].get_bboxes()
+    image = ds.samples_path[0].get_image()
 
     full = FullModel(len(THINGS), len(STUFF), anchors, 0.6).cuda()
     out = full(image.unsqueeze(0).float().cuda())
 
     lf = LossFunctions(ds.samples_path[0], out)
     # lf.roi_proposal_regression()
+    lf.ss_loss_max_pooling()
     lf.roi_proposal_objectness()
     lf.classification_loss()
     lf.regression_loss()

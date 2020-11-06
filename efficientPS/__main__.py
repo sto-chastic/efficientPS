@@ -3,18 +3,22 @@ import random
 import click
 import torch
 
-from .visualizer import LossCurvePlotter
+# from .visualizer import LossCurvePlotter
 from .models.full import FullModel
-from .train_core.optimizer import Optimzer
+from .train_core.optimizer import Optimizer
 from .train_core.losses import LossFunctions
-
+from . import *
+from .dataset import *
+from .models import *
+from .train_core.optimizer import Optimizer
+from .train_core.trainer import Trainer
+from .train_core.losses import LossFunctions
 
 @click.command()
 @click.option(
     "-i",
     "--input-dir",
     default=INPUT_DIR,
-    multiple=True,
     show_default=True,
     type=click.Path(exists=True, file_okay=False),
     help="Root directory of the images. Where the cities folders are",
@@ -32,14 +36,13 @@ from .train_core.losses import LossFunctions
     "--cities_train",
     default=CITIES,
     show_default=True,
-    type=click.Path(exists=True, file_okay=False),
     multiple=True,
     help="The cities list",
 )
 @click.option(
     "--batches",
     required=False,
-    default=2,
+    default=1,
     show_default=True,
     type=click.IntRange(min=1),
     help="The number of the batchs for the training",
@@ -88,11 +91,11 @@ from .train_core.losses import LossFunctions
     type=click.IntRange(min=1),
     help="The number of the data-loading workers",
 )
-def train_world_models(
+def train_ps(
     input_dir,
     ground_truth_dir,
-    cities,
-    batchs,
+    cities_train,
+    batches,
     workers,
     use_cuda,
     traning_progress_plot,
@@ -104,7 +107,9 @@ def train_world_models(
     use_cuda = use_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    full_model = FullModel().to(device)
+    nms_threshold = 0.5
+
+    full_model = FullModel(len(THINGS),len(STUFF), ANCHORS, nms_threshold).to(device)
 
     # This format allows to split the model and train parameters
     # with different optimizers. For now, full model is trained
@@ -113,7 +118,7 @@ def train_world_models(
         "full_model": ["adam", full_model.parameters(), 0.07]
     }
 
-    optimizer = Optimzer(optimizer_config)
+    optimizer = Optimizer(optimizer_config)
     if load:
         optimizer.load_state(state_dir=save_dir)
         full_model.load_model(path=save_dir)
@@ -143,12 +148,12 @@ def train_world_models(
                 "or use the --no-traning-progress-plot flag",
             )
 
-        line_plot = LossCurvePlotter(visdom=vis)
+        # line_plot = LossCurvePlotter(visdom=vis)
 
     for epoch in range(1, epochs + 1):
         train_loss = train(
             model=full_model,
-            loss_func=LossFunctions,
+            loss_class=LossFunctions,
             optimizer=optimizer,
         )
 
@@ -167,4 +172,4 @@ def train_world_models(
 
 
 if __name__ == "__main__":
-    train_world_models()
+    train_ps()

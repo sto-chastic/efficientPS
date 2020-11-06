@@ -37,8 +37,8 @@ class Optimizer:
             for key, type_params_lr in optimizer_config.items()
         }
         self.schedulers = {
-            key: select_scheduler(self.optimizers[key])
-            for key in optimizer_config.keys()
+            key: select_scheduler(type_params_lr[0], self.optimizers[key])
+            for key, type_params_lr in optimizer_config.items()
         }
 
     def zero_grad(self):

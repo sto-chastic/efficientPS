@@ -9,6 +9,7 @@ from .utilities import (
     RegionProposalNetwork,
     convert_box_chw_to_vertices,
     conv_1x1_bn_custom_act,
+    RegionProposalOutput,
 )
 
 
@@ -20,10 +21,10 @@ class ROIFeatureExtraction(nn.Module):
         # By  default  we  use  3  scales  and3 aspect ratios, yielding
         # k= 9anchors at each slidingposition.  For  a  convolutional
         # feature  map  of  a  sizeW×H(typically∼2,400), there are WHk anchors intotal.
-        self.rps_p32 = RegionProposalNetwork(anchors / 32, nms_threshold)
-        self.rps_p16 = RegionProposalNetwork(anchors / 16, nms_threshold)
-        self.rps_p8 = RegionProposalNetwork(anchors / 8, nms_threshold)
-        self.rps_p4 = RegionProposalNetwork(anchors / 4, nms_threshold)
+        self.rps_p32 = RegionProposalNetwork(anchors, 32, nms_threshold)
+        self.rps_p16 = RegionProposalNetwork(anchors, 16, nms_threshold)
+        self.rps_p8 = RegionProposalNetwork(anchors, 8, nms_threshold)
+        self.rps_p4 = RegionProposalNetwork(anchors, 4, nms_threshold)
 
         self.roi_align = RoIAlign((14, 14), spatial_scale=1, sampling_ratio=-1)
 
@@ -33,10 +34,17 @@ class ROIFeatureExtraction(nn.Module):
         batches = p32.shape[0]
         feature_inputs = {1: p32, 2: p16, 3: p8, 4: p4}
         # Main and bottom-up
-        p32_anchors, p32_objectness = self.rps_p32(p32)
-        p16_anchors, p16_objectness = self.rps_p16(p16)
-        p8_anchors, p8_objectness = self.rps_p8(p8)
-        p4_anchors, p4_objectness = self.rps_p4(p4)
+        proposal_outputs = [
+            self.rps_p32(p32),
+            self.rps_p16(p16),
+            self.rps_p8(p8),
+            self.rps_p4(p4),
+        ]
+
+        p32_anchors, p32_objectness = proposal_outputs[0].get_anch_obj()
+        p16_anchors, p16_objectness = proposal_outputs[1].get_anch_obj()
+        p8_anchors, p8_objectness = proposal_outputs[2].get_anch_obj()
+        p4_anchors, p4_objectness = proposal_outputs[3].get_anch_obj()
 
         def apply_to_batches(l, operation, *args):
             return [operation(x, *args) for x in l]
@@ -45,7 +53,7 @@ class ROIFeatureExtraction(nn.Module):
             return [operation(x1, x2, *args) for x1, x2 in zip(l1, l2)]
 
         # Scale properly
-        
+
         scaled_anchors = [
             apply_to_batches(p32_anchors, torch.mul, 32),
             apply_to_batches(p16_anchors, torch.mul, 16),
@@ -94,8 +102,8 @@ class ROIFeatureExtraction(nn.Module):
             4: [],
         }
 
-        # Nested loop but with a short ranges. Could be vectorized later
-        for l in range(3):
+        # Nested loop but with short ranges. Could be vectorized later
+        for l in range(4):
             for nl in range(1, 4):
 
                 def sort_anchors_by_level(sc_anchors, level_num):
@@ -129,9 +137,11 @@ class ROIFeatureExtraction(nn.Module):
             )
 
         extractions_by_batch = []
+        extracting_anchors_by_batch = []
         for b in range(batches):
             joined_extractions = []
-            for nl in range(1, 4):
+            extracting_anchors = []
+            for nl in range(1, 5):
                 if len(anchors_per_level[nl]) == 0:
                     continue
                 joined_anchors_per_level_l = []
@@ -144,6 +154,8 @@ class ROIFeatureExtraction(nn.Module):
                     joined_anchors_per_level_l.append(anch[b].squeeze(1))
                     joined_scores_per_level_l.append(sc[b].squeeze(1))
 
+                if len(joined_anchors_per_level_l) == 0:
+                    continue
                 joined_anchors_per_level = torch.cat(
                     joined_anchors_per_level_l, 0
                 )
@@ -167,9 +179,27 @@ class ROIFeatureExtraction(nn.Module):
                         prepare_boxes(joined_anchors_per_level),
                     ).squeeze_(),
                 )
+                extracting_anchors.append(joined_anchors_per_level)
 
-            extractions_by_batch.append(torch.cat(joined_extractions, 0))
-        return torch.stack(extractions_by_batch), scaled_anchors, scores
+            if len(joined_extractions) != 0:
+                extractions_by_batch.append(torch.cat(joined_extractions, 0))
+            else:
+                print("Warning: No extractions made at this level.")
+                extractions_by_batch.append(joined_extractions)
+
+            if len(extracting_anchors) != 0:
+                extracting_anchors_by_batch.append(
+                    torch.cat(extracting_anchors, 0)
+                )
+            else:
+                print("Because there were no proposal anchors.")
+                extracting_anchors_by_batch.append(extracting_anchors)
+
+        return (
+            torch.stack(extractions_by_batch),
+            torch.stack(extracting_anchors_by_batch),
+            proposal_outputs,
+        )
         # For the following part use 1d convolution with size and stride (256*14*14) to go through all the proposals
 
 
@@ -203,9 +233,9 @@ class InstanceSegmentationHead(nn.Module):
 
     def make_classes_output(self, num_things, activation=nn.LogSoftmax):
         convolutions = [
-            nn.Conv1d(1024, 2 * num_things, 1, 1),
-            nn.BatchNorm1d(2 * num_things),
-            activation(dim=2),
+            nn.Conv1d(1024, num_things + 1, 1, 1),
+            nn.BatchNorm1d(num_things + 1),
+            activation(dim=1),
         ]
         return nn.Sequential(*convolutions)
 
@@ -228,15 +258,21 @@ class InstanceSegmentationHead(nn.Module):
         return nn.Sequential(*convolutions)
 
     def forward(self, p32, p16, p8, p4):
-        extracted_features_, primitive_anchors, primitive_objectness = self.roi_features(p32, p16, p8, p4)
+        (
+            extracted_features_,
+            proposed_bboxes,
+            primitive_anchors,
+        ) = self.roi_features(p32, p16, p8, p4)
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(
             shape_[0], shape_[1], -1
         ).permute(0, 2, 1)
         core = self.core_fc(extracted_features)
 
-        classes = self.fc_classes(core).view(
-            shape_[0], self.num_things, 2, shape_[1]
+        classes = (
+            self.fc_classes(core)
+            .view(shape_[0], self.num_things + 1, 1, shape_[1])
+            .squeeze_(2)
         )
         bboxes = self.fc_bb(core).view(
             shape_[0], self.num_things, 4, shape_[1]
@@ -251,7 +287,13 @@ class InstanceSegmentationHead(nn.Module):
 
         masks = [get_mask(x).unsqueeze(1) for x in elements]
 
-        return classes, bboxes, torch.cat(masks, 1), primitive_anchors, primitive_objectness
+        return (
+            classes,
+            bboxes,
+            torch.cat(masks, 1),
+            proposed_bboxes,
+            primitive_anchors,
+        )
 
 
 if __name__ == "__main__":

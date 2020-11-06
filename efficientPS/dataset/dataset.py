@@ -3,72 +3,10 @@ import os
 import json
 
 import cv2
+import random
 
 from .utilities import polygons_to_bboxes
-
-LABELS = {
-    # Class: ID, Color
-    0: ["unlabeled", (0, 0, 0)],
-    1: ["ego vehicle", (0, 0, 0)],
-    2: ["rectification border", (0, 0, 0)],
-    3: ["out of roi", (0, 0, 0)],
-    4: ["static", (0, 0, 0)],
-    5: ["dynamic", (111, 74, 0)],
-    6: ["ground", (81, 0, 81)],
-    7: ["road", (128, 64, 128)],
-    8: ["sidewalk", (244, 35, 232)],
-    9: ["parking", (250, 170, 160)],
-    10: ["rail track", (230, 150, 140)],
-    11: ["building", (70, 70, 70)],
-    12: ["wall", (102, 102, 156)],
-    13: ["fence", (190, 153, 153)],
-    14: ["guard rail", (180, 165, 180)],
-    15: ["bridge", (150, 100, 100)],
-    16: ["tunnel", (150, 120, 90)],
-    17: ["pole", (153, 153, 153)],
-    18: ["polegroup", (153, 153, 153)],
-    19: ["traffic light", (250, 170, 30)],
-    20: ["traffic sign", (220, 220, 0)],
-    21: ["vegetation", (107, 142, 35)],
-    22: ["terrain", (152, 251, 152)],
-    23: ["sky", (70, 130, 180)],
-    24: ["person", (220, 20, 60)],
-    25: ["rider", (255, 0, 0)],
-    26: ["car", (0, 0, 142)],
-    27: ["truck", (0, 0, 70)],
-    28: ["bus", (0, 60, 100)],
-    29: ["caravan", (0, 0, 90)],
-    30: ["trailer", (0, 0, 110)],
-    31: ["train", (0, 80, 100)],
-    32: ["motorcycle", (0, 0, 230)],
-    33: ["bicycle", (119, 11, 32)],
-    -1: ["license plate", (0, 0, 142)],
-}
-
-STUFF = [
-    "road",
-    "sidewalk",
-    "building",
-    "fence",
-    "wall",
-    "vegetation",
-    "terrain",
-    "sky",
-    "pole",
-    "traffic sign",
-    "traffic ligth",
-]
-
-THINGS = [
-    "car",
-    "bicycle",
-    "bus",
-    "truck",
-    "train",
-    "motorcycle",
-    "person",
-    "rider",
-]
+from . import *
 
 
 class PSSamples:
@@ -78,48 +16,69 @@ class PSSamples:
         gt_polygons_path,
         gt_label_IDs_path,
         gt_instance_IDs_path,
+        device,
+        crop=(1024, 2048),
     ):
-        self.image_path = (image_path,)
-        self.gt_polygons_path = (gt_polygons_path,)
-        self.gt_label_IDs_path = (gt_label_IDs_path,)
-        self.gt_instance_IDs_path = (gt_instance_IDs_path,)
+        self.device = device
+        self.crop = crop
+        self.get_cropped_area()
+        self.image_path = image_path
+        self.gt_polygons_path = gt_polygons_path
+        self.gt_label_IDs_path = gt_label_IDs_path
+        self.gt_instance_IDs_path = gt_instance_IDs_path
 
-    def get_bboxes(self):
+    def get_cropped_area(self):
+        self.x1 = random.randint(0, 2048 - self.crop[1])
+        self.y1 = random.randint(0, 1024 - self.crop[0])
+
+        self.x2 = self.x1 + self.crop[1]
+        self.y2 = self.y1 + self.crop[0]
+
+        self.offset = [self.x1, self.y1]
+
+    def get_bboxes(
+        self,
+    ):
         filtered_bboxes = []
-        with open(self.gt_polygons_path[0]) as f:
+        with open(self.gt_polygons_path) as f:
             data = json.load(f)
 
         for element in data["objects"]:
             if element["label"] in THINGS:
-                filtered_bboxes.append(
-                    {
-                        "label": element["label"],
-                        "bbox": polygons_to_bboxes(element["polygon"]),
-                    }
-                )
+                potential_box = {
+                    "label": element["label"],
+                    "bbox": polygons_to_bboxes(
+                        element["polygon"], offset=self.offset
+                    ),
+                }
+                if (
+                    potential_box["bbox"][0][0] >= 0.0
+                    or potential_box["bbox"][0][1] >= 0.0
+                    or potential_box["bbox"][1][0] < self.x2
+                    or potential_box["bbox"][1][1] < self.y2
+                ):
+                    filtered_bboxes.append(potential_box)
 
         return filtered_bboxes
 
     def get_label_IDs(self):
-        image = cv2.imread(self.gt_label_IDs_path[0], cv2.IMREAD_GRAYSCALE)
-        torch_image = torch.tensor(image)
-        return torch_image.unsqueeze(0)
+        image = cv2.imread(self.gt_label_IDs_path, cv2.IMREAD_GRAYSCALE)
+        torch_image = torch.tensor(
+            image[self.y1 : self.y2, self.x1 : self.x2], device=self.device
+        )
+        return torch_image.unsqueeze(0).long()
 
-    def get_instances_IDs(self):
-        image = cv2.imread(self.gt_instance_IDs_path[0], cv2.IMREAD_GRAYSCALE)
-        torch_image = torch.tensor(image)
-        return torch_image.unsqueeze(0)
-
-    def get_image(self, scale=1 / 2):
-        image = cv2.imread(self.gt_instance_IDs_path[0])
+    def get_image(self, scale=1):
+        image = cv2.imread(self.image_path)
+        image = image[self.y1 : self.y2, self.x1 : self.x2]
         if scale != 1:
             image_dims = image.shape
             width = int(image_dims[0] * scale)
             height = int(image_dims[1] * scale)
             dim = (width, height)
             image = cv2.resize(image, dim)
-        torch_image = torch.tensor(image)
-        return torch_image.permute(2, 0, 1)
+        torch_image = torch.tensor(image, device=self.device)
+        return torch_image.permute(2, 0, 1).unsqueeze(0).float()
 
 
 class DataSet(torch.utils.data.Dataset):
@@ -127,11 +86,15 @@ class DataSet(torch.utils.data.Dataset):
         self,
         root_folder_inp,
         root_folder_gt,
+        device,
         cities_list,
+        crop=(1024, 2048),
     ):
         self.root_folder_inp = root_folder_inp
         self.root_folder_gt = root_folder_gt
         self.cities_list = cities_list
+        self.crop = crop
+        self.device = device
         self.samples_path = self.find_instances()
 
     def find_instances(self):
@@ -154,6 +117,8 @@ class DataSet(torch.utils.data.Dataset):
                     os.path.join(
                         root_gt, "{}{}".format(name, "_gtFine_instanceIds.png")
                     ),
+                    device=self.device,
+                    crop=self.crop,
                 )
                 samples_path.append(ps)
         return samples_path

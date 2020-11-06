@@ -3,9 +3,15 @@ import random
 import click
 import torch
 
-from .visualizer import LossCurvePlotter
+# from .visualizer import LossCurvePlotter
 from .models.full import FullModel
-from .train_core.optimizer import Optimzer
+from .train_core.optimizer import Optimizer
+from .train_core.losses import LossFunctions
+from . import *
+from .dataset import *
+from .models import *
+from .train_core.optimizer import Optimizer
+from .train_core.trainer import Trainer
 from .train_core.losses import LossFunctions
 
 
@@ -14,7 +20,6 @@ from .train_core.losses import LossFunctions
     "-i",
     "--input-dir",
     default=INPUT_DIR,
-    multiple=True,
     show_default=True,
     type=click.Path(exists=True, file_okay=False),
     help="Root directory of the images. Where the cities folders are",
@@ -32,14 +37,13 @@ from .train_core.losses import LossFunctions
     "--cities_train",
     default=CITIES,
     show_default=True,
-    type=click.Path(exists=True, file_okay=False),
     multiple=True,
     help="The cities list",
 )
 @click.option(
     "--batches",
     required=False,
-    default=2,
+    default=1,
     show_default=True,
     type=click.IntRange(min=1),
     help="The number of the batchs for the training",
@@ -88,23 +92,36 @@ from .train_core.losses import LossFunctions
     type=click.IntRange(min=1),
     help="The number of the data-loading workers",
 )
-def train_world_models(
+@click.option(
+    "--crop-sizes",
+    default=[1024, 2048],
+    show_default=True,
+    multiple=True,
+    type=click.IntRange(min=1, max=2048),
+    help="Enter 2 values: Crop the images at random locations to be of Height, Widht",
+)
+def train_ps(
     input_dir,
     ground_truth_dir,
-    cities,
-    batchs,
+    cities_train,
+    batches,
     workers,
     use_cuda,
     traning_progress_plot,
     load,
     save_dir,
     epochs,
+    crop_sizes
 ):
     torch.cuda.empty_cache()
     use_cuda = use_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    full_model = FullModel().to(device)
+    nms_threshold = 0.5
+
+    full_model = FullModel(len(THINGS), len(STUFF), ANCHORS.to(device), nms_threshold).to(
+        device
+    )
 
     # This format allows to split the model and train parameters
     # with different optimizers. For now, full model is trained
@@ -113,7 +130,7 @@ def train_world_models(
         "full_model": ["adam", full_model.parameters(), 0.07]
     }
 
-    optimizer = Optimzer(optimizer_config)
+    optimizer = Optimizer(optimizer_config)
     if load:
         optimizer.load_state(state_dir=save_dir)
         full_model.load_model(path=save_dir)
@@ -125,6 +142,7 @@ def train_world_models(
         "root_folder_gt": ground_truth_dir,
         "cities_list": cities_train,
         "batches": batches,
+        "crop": crop_sizes
     }
 
     train = Trainer(
@@ -143,16 +161,16 @@ def train_world_models(
                 "or use the --no-traning-progress-plot flag",
             )
 
-        line_plot = LossCurvePlotter(visdom=vis)
+        # line_plot = LossCurvePlotter(visdom=vis)
 
     for epoch in range(1, epochs + 1):
         train_loss = train(
             model=full_model,
-            loss_func=LossFunctions,
+            loss_class=LossFunctions,
             optimizer=optimizer,
         )
 
-        total_train_loss = train_loss["total_loss"]
+        total_train_loss = train_loss.losses_dict["total_loss"]
         print(f"{epoch}/{epochs} : Loss={total_train_loss}")
 
         if traning_progress_plot:
@@ -165,8 +183,6 @@ def train_world_models(
 
             optimizer.save_state(state_dir=model_dir)
 
-        
-
 
 if __name__ == "__main__":
-    train_world_models()
+    train_ps()

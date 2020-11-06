@@ -14,6 +14,7 @@ from .train_core.optimizer import Optimizer
 from .train_core.trainer import Trainer
 from .train_core.losses import LossFunctions
 
+
 @click.command()
 @click.option(
     "-i",
@@ -91,6 +92,14 @@ from .train_core.losses import LossFunctions
     type=click.IntRange(min=1),
     help="The number of the data-loading workers",
 )
+@click.option(
+    "--crop-sizes",
+    default=[1024, 2048],
+    show_default=True,
+    multiple=True,
+    type=click.IntRange(min=1, max=2048),
+    help="Enter 2 values: Crop the images at random locations to be of Height, Widht",
+)
 def train_ps(
     input_dir,
     ground_truth_dir,
@@ -102,6 +111,7 @@ def train_ps(
     load,
     save_dir,
     epochs,
+    crop_sizes
 ):
     torch.cuda.empty_cache()
     use_cuda = use_cuda and torch.cuda.is_available()
@@ -109,7 +119,9 @@ def train_ps(
 
     nms_threshold = 0.5
 
-    full_model = FullModel(len(THINGS),len(STUFF), ANCHORS, nms_threshold).to(device)
+    full_model = FullModel(len(THINGS), len(STUFF), ANCHORS, nms_threshold).to(
+        device
+    )
 
     # This format allows to split the model and train parameters
     # with different optimizers. For now, full model is trained
@@ -130,6 +142,7 @@ def train_ps(
         "root_folder_gt": ground_truth_dir,
         "cities_list": cities_train,
         "batches": batches,
+        "crop": crop_sizes
     }
 
     train = Trainer(

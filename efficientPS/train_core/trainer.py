@@ -12,6 +12,7 @@ class Core:
         root_folder_gt,
         cities_list,
         device,
+        crop=(1024, 2048),
         batches=1,
         num_workers=1,
         train: bool = True,
@@ -22,6 +23,7 @@ class Core:
             root_folder_gt=root_folder_gt,
             cities_list=cities_list,
             device=device,
+            crop=crop,
         )
         self.batches = batches
         self.loader = torch.utils.data.DataLoader(
@@ -30,7 +32,7 @@ class Core:
             shuffle=train,
             num_workers=num_workers,
             drop_last=True,
-            collate_fn=self.collate_fn
+            collate_fn=self.collate_fn,
         )
         self.device = device
         self.train = train
@@ -68,22 +70,21 @@ class Trainer(Core):
         losses = {}
 
         for loaded_data in self.loader:
-            with torch.autograd.detect_anomaly():
-                image = loaded_data.get_image()
-                optimizer.zero_grad()
-                inference = model(image)
-                loss_fns = loss_class(loaded_data, inference)
-                loss = loss_fns.get_total_loss()
+            image = loaded_data.get_image()
+            optimizer.zero_grad()
+            inference = model(image)
+            loss_fns = loss_class(loaded_data, inference)
+            loss = loss_fns.get_total_loss()
 
-                loss["total_loss"].backward()
+            loss["total_loss"].backward()
 
-                optimizer.step()
-                for key, _ in loss.items():
-                    if key not in losses:
-                        losses[key] = 0.0
-                    losses[key] += loss[key].item()
+            optimizer.step()
+            for key, _ in loss.items():
+                if key not in losses:
+                    losses[key] = 0.0
+                losses[key] += loss[key].item()
 
-                optimizer.step_scheduler(losses)
+            optimizer.step_scheduler(losses)
         return losses
 
 

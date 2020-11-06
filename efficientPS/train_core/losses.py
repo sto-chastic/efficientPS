@@ -342,6 +342,21 @@ class LossFunctions:
         loss = gt * torch.log(inference) + (~gt) * torch.log(1 - inference)
         return -loss
 
+    def get_total_loss(self):
+        self.losses_dict = {
+            "ss_loss_max_pooling": self.ss_loss_max_pooling(),
+            "roi_proposal_objectness": self.roi_proposal_objectness(),
+            "roi_proposal_regression": self.roi_proposal_regression(),
+            "regression_loss": self.regression_loss(),
+            "mask_loss": self.mask_loss(),
+        }
+        loss = 0
+        for v in self.losses_dict.values():
+            loss += v
+
+        self.losses_dict["full_model"] = loss
+        return loss
+
 
 if __name__ == "__main__":
     anchors = ANCHORS.cuda()

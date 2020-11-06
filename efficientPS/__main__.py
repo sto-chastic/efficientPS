@@ -119,7 +119,7 @@ def train_ps(
 
     nms_threshold = 0.5
 
-    full_model = FullModel(len(THINGS), len(STUFF), ANCHORS, nms_threshold).to(
+    full_model = FullModel(len(THINGS), len(STUFF), ANCHORS.to(device), nms_threshold).to(
         device
     )
 
@@ -170,7 +170,7 @@ def train_ps(
             optimizer=optimizer,
         )
 
-        total_train_loss = train_loss["total_loss"]
+        total_train_loss = train_loss.losses_dict["total_loss"]
         print(f"{epoch}/{epochs} : Loss={total_train_loss}")
 
         if traning_progress_plot:

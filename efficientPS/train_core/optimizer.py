@@ -48,7 +48,7 @@ class Optimizer:
         [opt.step() for _, opt in self.optimizers.items()]
 
     def step_scheduler(self, loss):
-        [sch.step(loss[key]) for key, sch in self.schedulers.items()]
+        [sch.step(loss.losses_dict[key]) for key, sch in self.schedulers.items()]
 
     def load_state(self, state_dir) -> None:
         if not state_dir.endswith("/"):

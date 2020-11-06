@@ -76,15 +76,15 @@ class Trainer(Core):
             loss_fns = loss_class(loaded_data, inference)
             loss = loss_fns.get_total_loss()
 
-            loss["total_loss"].backward()
+            loss.backward()
 
             optimizer.step()
-            for key, _ in loss.items():
+            for key, _ in loss_fns.losses_dict.items():
                 if key not in losses:
                     losses[key] = 0.0
-                losses[key] += loss[key].item()
+                losses[key] += loss_fns.losses_dict[key].item()
 
-            optimizer.step_scheduler(losses)
+            optimizer.step_scheduler(loss_fns)
         return losses
 
 

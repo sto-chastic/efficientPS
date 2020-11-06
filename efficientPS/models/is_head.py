@@ -181,10 +181,20 @@ class ROIFeatureExtraction(nn.Module):
                 )
                 extracting_anchors.append(joined_anchors_per_level)
 
-            extractions_by_batch.append(torch.cat(joined_extractions, 0))
-            extracting_anchors_by_batch.append(
-                torch.cat(extracting_anchors, 0)
-            )
+            if len(joined_extractions) != 0:
+                extractions_by_batch.append(torch.cat(joined_extractions, 0))
+            else:
+                print("Warning: No extractions made at this level.")
+                extractions_by_batch.append(joined_extractions)
+
+            if len(extracting_anchors) != 0:
+                extracting_anchors_by_batch.append(
+                    torch.cat(extracting_anchors, 0)
+                )
+            else:
+                print("Because there were no proposal anchors.")
+                extracting_anchors_by_batch.append(extracting_anchors)
+
         return (
             torch.stack(extractions_by_batch),
             torch.stack(extracting_anchors_by_batch),

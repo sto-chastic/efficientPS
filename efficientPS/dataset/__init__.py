@@ -40,7 +40,7 @@ ID_TO_LABELS = {
 LABELS_TO_ID = {
     # Class: ID, Color
     "unlabeled": 0,
-    "ego vehicle" : 1,
+    "ego vehicle": 1,
     "rectification border": 2,
     "out of roi": 3,
     "static": 4,
@@ -104,10 +104,10 @@ THINGS = [
 THINGS_TO_THINGS_ID = {
     "car": 1,
     "bicycle": 2,
-    "bus":3,
-    "truck":4,
-    "train":5,
-    "motorcycle":6,
-    "person":7,
-    "rider":8,
+    "bus": 3,
+    "truck": 4,
+    "train": 5,
+    "motorcycle": 6,
+    "person": 7,
+    "rider": 8,
 }

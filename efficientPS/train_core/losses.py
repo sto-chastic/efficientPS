@@ -8,9 +8,17 @@ from ..dataset.dataset import DataSet
 from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
 from ..models import *
 from ..models.full import FullModel, PSOutput
-from ..models.utilities import (convert_box_chw_to_vertices,
-                                convert_box_vertices_to_cwh,)
-from .utilities import intersection, iou_function, index_select2D, id_to_things_id_expanded
+from ..models.utilities import (
+    convert_box_chw_to_vertices,
+    convert_box_vertices_to_cwh,
+)
+from .utilities import (
+    intersection,
+    iou_function,
+    index_select2D,
+    id_to_things_id_expanded,
+)
+
 
 class LossFunctions:
     def __init__(self, ground_truth, inference):
@@ -19,16 +27,18 @@ class LossFunctions:
 
         self.objectness_thr = 0.5  # According to Mask R-CNN paper
 
-        self.first_stage_num_samples = 256   # According to EfficientPS paper
-                                             # only sample 256 elements
+        self.first_stage_num_samples = 256  # According to EfficientPS paper
+        # only sample 256 elements
         self.second_stage_num_samples = 512  # According to EfficientPS paper
-                                             # only sample 512 elements
+        # only sample 512 elements
 
     def ss_loss_max_pooling(self):
         logits = self.inference.semantic_logits
         (batch, num_classes, height, width) = logits.shape
         nlll = nn.NLLLoss(reduction="none")
-        loss = nlll(logits, self.ground_truth.get_label_IDs().to(logits.device))
+        loss = nlll(
+            logits, self.ground_truth.get_label_IDs().to(logits.device)
+        )
 
         values, ind = torch.sort(loss.view(batch, -1), 1)
 
@@ -50,9 +60,7 @@ class LossFunctions:
         gt_bb = self.ground_truth.get_bboxes()
 
         # How many samples, positive and negative, per extraction level
-        num_samples_per_stage = (
-            self.first_stage_num_samples // 4
-        )
+        num_samples_per_stage = self.first_stage_num_samples // 4
 
         total_loss = 0.0
         for i in range(4):
@@ -62,20 +70,22 @@ class LossFunctions:
             primitive_obj = level_primitives.objectness
 
             for bb in gt_bb:
-                edges_bb = convert_box_chw_to_vertices(primitive_bb[0]* level_primitives.scale)
+                edges_bb = convert_box_chw_to_vertices(
+                    primitive_bb[0] * level_primitives.scale
+                )
                 gt_objectness = iou_function(edges_bb, bb["bbox"]).ge(
                     self.objectness_thr
                 )
 
-                objectness.append(
-                    gt_objectness
-                )
+                objectness.append(gt_objectness)
 
             objectness_stack = torch.stack(objectness)
             objectness_gt = objectness_stack.sum(0).ge(1)
 
-            loss = self._bb_proposal_objectness(objectness_gt, primitive_obj[0])
-            
+            loss = self._bb_proposal_objectness(
+                objectness_gt, primitive_obj[0]
+            )
+
             if objectness_gt.shape[0] > num_samples_per_stage:
                 samples = random.sample(
                     range(objectness_gt.shape[0]), num_samples_per_stage
@@ -94,15 +104,12 @@ class LossFunctions:
         ) * torch.log(1 - objectness)
         return -partial_objectness_loss
 
-
     def roi_proposal_regression(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
 
         # How many samples, positive and negative, per extraction level
-        num_samples_per_stage = (
-            self.first_stage_num_samples // 4
-        )
+        num_samples_per_stage = self.first_stage_num_samples // 4
 
         total_loss = 0.0
         for i in range(4):
@@ -113,15 +120,15 @@ class LossFunctions:
 
             gt_bboxesl = []
             for bb in gt_bb:
-                edges_bb = convert_box_chw_to_vertices(primitive_bb[0]* level_primitives.scale)
+                edges_bb = convert_box_chw_to_vertices(
+                    primitive_bb[0] * level_primitives.scale
+                )
                 gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
                 positive_match = iou_function(edges_bb, bb["bbox"]).ge(
                     self.objectness_thr
                 )
 
-                positive_matches.append(
-                    positive_match
-                )
+                positive_matches.append(positive_match)
 
             gt_bboxes_raw = torch.stack(gt_bboxesl).to(primitive_bb[0].device)
             positives_stack = torch.stack(positive_matches)
@@ -129,9 +136,11 @@ class LossFunctions:
 
             positives_index = positives_stack.nonzero()
 
-            bboxes = primitive_bb[0].index_select(0, positives_index[:,1])
-            gt_bboxes = gt_bboxes_raw.index_select(0, positives_index[:,0])
-            transf = primitive_transformations[0].index_select(0, positives_index[:,1])
+            bboxes = primitive_bb[0].index_select(0, positives_index[:, 1])
+            gt_bboxes = gt_bboxes_raw.index_select(0, positives_index[:, 0])
+            transf = primitive_transformations[0].index_select(
+                0, positives_index[:, 1]
+            )
 
             loss = self._bb_regression(bboxes, gt_bboxes, transf)
 
@@ -144,18 +153,21 @@ class LossFunctions:
             else:
                 total_loss += torch.sum(loss)
 
-        return total_loss 
+        return total_loss
 
     @staticmethod
     def _bb_regression(
-        bboxes, gt_bboxes, transformations,
+        bboxes,
+        gt_bboxes,
+        transformations,
     ):
         smooth = 1e-3
+
         def bb_parametrization(anchors):
             param = torch.zeros_like(anchors)
-            param[:, :2] = (
-                anchors[:, :2] - transformations[:, :2]
-            ) / (transformations[:, 2:] + smooth)
+            param[:, :2] = (anchors[:, :2] - transformations[:, :2]) / (
+                transformations[:, 2:] + smooth
+            )
 
             log_arg = anchors[:, 2:] / (transformations[:, 2:] + smooth)
             param[:, 2:] = torch.log(torch.clamp(log_arg, min=smooth))
@@ -194,19 +206,25 @@ class LossFunctions:
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
-        gt_class = selected_class*objectness_gt  # Class 0 is empty bbox, background
+        gt_class = (
+            selected_class * objectness_gt
+        )  # Class 0 is empty bbox, background
 
-        one_hot_targets = nn.functional.one_hot(gt_class, num_classes=len(THINGS)+1).permute(1, 0)
+        one_hot_targets = nn.functional.one_hot(
+            gt_class, num_classes=len(THINGS) + 1
+        ).permute(1, 0)
 
         nlll = nn.NLLLoss(reduction="none")
-        
+
         loss = nlll(inference_classes.permute(0, 1, 2), gt_class.unsqueeze_(0))
         if loss.shape[0] > self.second_stage_num_samples:
             samples = random.sample(
                 range(loss.shape[0]), self.second_stage_num_samples
             )  # According to the paper, only sample 512 elements
 
-            total_loss = torch.sum(loss[samples]) / self.second_stage_num_samples
+            total_loss = (
+                torch.sum(loss[samples]) / self.second_stage_num_samples
+            )
         else:
             total_loss = torch.sum(loss)
 
@@ -220,11 +238,13 @@ class LossFunctions:
         inference_bboxes = self.inference.bboxes
         inference_classes = torch.exp(self.inference.classes)
 
-        renorm_inference_classes = inference_classes[:, 1:, :] / torch.sum(inference_classes[:, 1:, :], dim=1)
+        renorm_inference_classes = inference_classes[:, 1:, :] / torch.sum(
+            inference_classes[:, 1:, :], dim=1
+        )
 
         selected_inference_bb = index_select2D(
             inference_bboxes.permute(0, 2, 1, 3),
-            renorm_inference_classes.argmax(dim=1)[0]
+            renorm_inference_classes.argmax(dim=1)[0],
         ).permute(1, 0, 2)
 
         objectness = []
@@ -246,14 +266,18 @@ class LossFunctions:
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
-        loss = self._bb_regression(selected_inference_bb[0], gt_bboxes, proposed_bboxes[0])
+        loss = self._bb_regression(
+            selected_inference_bb[0], gt_bboxes, proposed_bboxes[0]
+        )
         loss = loss.masked_select(objectness_gt)
         if loss.shape[0] > self.second_stage_num_samples:
             samples = random.sample(
                 range(loss.shape[0]), self.second_stage_num_samples
             )  # According to the paper, only sample 512 elements
 
-            total_loss = torch.sum(loss[samples]) / self.second_stage_num_samples
+            total_loss = (
+                torch.sum(loss[samples]) / self.second_stage_num_samples
+            )
         else:
             total_loss = torch.sum(loss)
 
@@ -264,7 +288,9 @@ class LossFunctions:
         gt_bb = self.ground_truth.get_bboxes()
         mask_logits = self.inference.mask_logits
         proposed_bboxes = self.inference.proposed_bboxes
-        gt_mask_seg = id_to_things_id_expanded(self.ground_truth.get_label_IDs())
+        gt_mask_seg = id_to_things_id_expanded(
+            self.ground_truth.get_label_IDs()
+        )
         gt_mask_seg = gt_mask_seg.to(mask_logits.device)
 
         objectness = []
@@ -281,14 +307,15 @@ class LossFunctions:
             ious.append(iou)
             gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
 
-
         closest_iou = torch.stack(ious).argmax(dim=0)
         gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device)
         gt_bboxes = gt_bboxes_stack.index_select(0, closest_iou)
-        gt_classes = torch.tensor(gt_classes, device=iou.device).index_select(0, closest_iou)
+        gt_classes = torch.tensor(gt_classes, device=iou.device).index_select(
+            0, closest_iou
+        )
 
         gt_bb_classes = torch.cat([gt_classes.unsqueeze(1), gt_bboxes], dim=1)
-        
+
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
@@ -297,13 +324,11 @@ class LossFunctions:
         gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
 
         selected_mask = index_select2D(
-            mask_logits.permute(0, 3, 4, 2, 1),
-            gt_classes - 1
+            mask_logits.permute(0, 3, 4, 2, 1), gt_classes - 1
         )
 
         loss = self._cross_entropy(selected_mask, gt_masks)
-        return torch.sum(loss.index_select(0, objectness_gt.nonzero()[:,0]))
-
+        return torch.sum(loss.index_select(0, objectness_gt.nonzero()[:, 0]))
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):
@@ -311,13 +336,27 @@ class LossFunctions:
         roi = RoIAlign((28, 28), spatial_scale=1, sampling_ratio=-1)
         extracted = roi(full_mask.unsqueeze(1), bb_and_classes.float())
         return extracted.ge(binarize_threshold)
-        
+
     @staticmethod
     def _cross_entropy(inference, gt):
-        loss = gt * torch.log(inference) + (
-            ~gt
-        ) * torch.log(1 - inference)
+        loss = gt * torch.log(inference) + (~gt) * torch.log(1 - inference)
         return -loss
+
+    def get_total_loss(self):
+        self.losses_dict = {
+            "ss_loss_max_pooling": self.ss_loss_max_pooling(),
+            "roi_proposal_objectness": self.roi_proposal_objectness(),
+            "roi_proposal_regression": self.roi_proposal_regression(),
+            "regression_loss": self.regression_loss(),
+            "mask_loss": self.mask_loss(),
+        }
+        loss = 0
+        for v in self.losses_dict.values():
+            loss += v
+
+        self.losses_dict["full_model"] = loss
+        return loss
+
 
 if __name__ == "__main__":
     anchors = ANCHORS.cuda()
@@ -326,13 +365,13 @@ if __name__ == "__main__":
         root_folder_inp="efficientPS/data/left_img/leftImg8bit/train",
         root_folder_gt="efficientPS/data/gt/gtFine/train",
         cities_list=["aachen"],
-        crop=[128, 256]
+        crop=[128, 256],
     )
     boxes = ds.samples_path[0].get_bboxes()
     image = ds.samples_path[0].get_image()
 
     full = FullModel(len(THINGS), len(STUFF), anchors, 0.6).cuda()
-    out = full(image.unsqueeze(0).float().cuda())
+    out = full(image.cuda())
 
     lf = LossFunctions(ds.samples_path[0], out)
     # lf.roi_proposal_regression()

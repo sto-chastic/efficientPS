@@ -1,4 +1,4 @@
-def polygons_to_bboxes(polygons, offset = [0, 0]):
+def polygons_to_bboxes(polygons, offset=[0, 0]):
     x_coordinates, y_coordinates = zip(*polygons)
 
     return [

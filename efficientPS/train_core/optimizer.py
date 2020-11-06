@@ -37,18 +37,18 @@ class Optimizer:
             for key, type_params_lr in optimizer_config.items()
         }
         self.schedulers = {
-            key: select_scheduler(self.optimizers[key])
-            for key in optimizer_config.keys()
+            key: select_scheduler(type_params_lr[0], self.optimizers[key])
+            for key, type_params_lr in optimizer_config.items()
         }
 
     def zero_grad(self):
-        [opt.zero_grad() for _, opt in self.optimizer.items()]
+        [opt.zero_grad() for _, opt in self.optimizers.items()]
 
     def step(self):
-        [opt.step() for _, opt in self.optimizer.items()]
+        [opt.step() for _, opt in self.optimizers.items()]
 
     def step_scheduler(self, loss):
-        [sch.step(loss[key]) for key, sch in self.scheduler.items()]
+        [sch.step(loss.losses_dict[key]) for key, sch in self.schedulers.items()]
 
     def load_state(self, state_dir) -> None:
         if not state_dir.endswith("/"):

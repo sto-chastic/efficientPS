@@ -332,7 +332,7 @@ if __name__ == "__main__":
     image = ds.samples_path[0].get_image()
 
     full = FullModel(len(THINGS), len(STUFF), anchors, 0.6).cuda()
-    out = full(image.unsqueeze(0).float().cuda())
+    out = full(image.cuda())
 
     lf = LossFunctions(ds.samples_path[0], out)
     # lf.roi_proposal_regression()

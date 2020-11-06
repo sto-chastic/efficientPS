@@ -21,6 +21,7 @@ class Core:
             root_folder_inp=root_folder_inp,
             root_folder_gt=root_folder_gt,
             cities_list=cities_list,
+            device=device,
         )
         self.batches = batches
         self.loader = torch.utils.data.DataLoader(
@@ -29,11 +30,22 @@ class Core:
             shuffle=train,
             num_workers=num_workers,
             drop_last=True,
+            collate_fn=self.collate_fn
         )
         self.device = device
         self.train = train
 
         self.visdom = visdom
+
+    @staticmethod
+    def collate_fn(batch):
+        # TODO(David): Only works with batch size 1
+        # should write my own collate fn for the DataLoader
+        # and extend my PSSamples functions to multiple samples
+        if len(batch) == 1:
+            return batch[0]
+        else:
+            raise NotImplementedError()
 
 
 class Trainer(Core):
@@ -57,9 +69,6 @@ class Trainer(Core):
 
         for loaded_data in self.loader:
             with torch.autograd.detect_anomaly():
-                # TODO(David): Only works with batch size 1
-                # should write my own collate fn for the DataLoader
-                # and extend my PSSamples functions to multiple samples
                 image = loaded_data.get_image()
                 optimizer.zero_grad()
                 inference = model(image)

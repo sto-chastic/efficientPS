@@ -15,8 +15,10 @@ class PSSamples:
         gt_polygons_path,
         gt_label_IDs_path,
         gt_instance_IDs_path,
+        device,
         crop = (1024, 2048)
     ):
+        self.device = device
         self.crop = crop
         self.get_cropped_area()
         self.image_path = image_path
@@ -59,7 +61,7 @@ class PSSamples:
 
     def get_label_IDs(self):
         image = cv2.imread(self.gt_label_IDs_path, cv2.IMREAD_GRAYSCALE)
-        torch_image = torch.tensor(image[self.y1:self.y2, self.x1:self.x2])
+        torch_image = torch.tensor(image[self.y1:self.y2, self.x1:self.x2], device = self.device)
         return torch_image.unsqueeze(0).long()
 
     def get_image(self, scale = 1):
@@ -71,8 +73,8 @@ class PSSamples:
             height = int(image_dims[1] * scale)
             dim = (width, height)
             image = cv2.resize(image, dim)
-        torch_image = torch.tensor(image)
-        return torch_image.permute(2, 0, 1).float()
+        torch_image = torch.tensor(image, device = self.device)
+        return torch_image.permute(2, 0, 1).unsqueeze(0).float()
 
 
 class DataSet(torch.utils.data.Dataset):
@@ -80,6 +82,7 @@ class DataSet(torch.utils.data.Dataset):
         self,
         root_folder_inp,
         root_folder_gt,
+        device,
         cities_list,
         crop=(1024, 2048)
     ):
@@ -87,6 +90,7 @@ class DataSet(torch.utils.data.Dataset):
         self.root_folder_gt = root_folder_gt
         self.cities_list = cities_list
         self.crop = crop
+        self.device = device
         self.samples_path = self.find_instances()
 
     def find_instances(self):
@@ -109,7 +113,8 @@ class DataSet(torch.utils.data.Dataset):
                     os.path.join(
                         root_gt, "{}{}".format(name, "_gtFine_instanceIds.png")
                     ),
-                    crop = self.crop
+                    device = self.device,
+                    crop = self.crop,
                 )
                 samples_path.append(ps)
         return samples_path

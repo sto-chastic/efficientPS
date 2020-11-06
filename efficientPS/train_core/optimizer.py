@@ -42,13 +42,13 @@ class Optimizer:
         }
 
     def zero_grad(self):
-        [opt.zero_grad() for _, opt in self.optimizer.items()]
+        [opt.zero_grad() for _, opt in self.optimizers.items()]
 
     def step(self):
-        [opt.step() for _, opt in self.optimizer.items()]
+        [opt.step() for _, opt in self.optimizers.items()]
 
     def step_scheduler(self, loss):
-        [sch.step(loss[key]) for key, sch in self.scheduler.items()]
+        [sch.step(loss[key]) for key, sch in self.schedulers.items()]
 
     def load_state(self, state_dir) -> None:
         if not state_dir.endswith("/"):

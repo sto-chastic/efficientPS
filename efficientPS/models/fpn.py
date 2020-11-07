@@ -72,11 +72,8 @@ class TwoWayFeaturePyramid(nn.Module):
 
         # Bottom-up branch
         self.times4_reduction_bu = conv_1x1_bn(40, 256)
-        self.downsample4 = nn.AdaptiveAvgPool2d((128, 256))
         self.times8_reduction_bu = conv_1x1_bn(64, 256)
-        self.downsample8 = nn.AdaptiveAvgPool2d((64, 128))
         self.times16_reduction_bu = conv_1x1_bn(176, 256)
-        self.downsample16 = nn.AdaptiveAvgPool2d((32, 64))
         self.times32_reduction_bu = conv_1x1_bn(2048, 256)
 
         # Top-down branch
@@ -93,30 +90,37 @@ class TwoWayFeaturePyramid(nn.Module):
         self.p4conv = DepthSeparableConv2d(256, 256)
 
     def forward(self, inp):
+        ini_shape = inp.shape
         # Main and bottom-up
-        x = self.block1(inp)
-        x = self.block2(x)
-        x = self.block3(x)
+        x = self.block1(inp)  # /2
+        x = self.block2(x)  # /2
+        x = self.block3(x)  # /2
 
         x_bu_1 = self.times4_reduction_bu(x)
         x_td_4_ = self.times4_reduction_td(x)
 
         x = self.block4(x)
 
-        x_bu_2 = self.times8_reduction_bu(x) + self.downsample4(x_bu_1)
+        x_bu_2 = self.times8_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_1)
         x_td_3_ = self.times8_reduction_td(x)
 
         x = self.block5(x)
         x = self.block6(x)
 
-        x_bu_3 = self.times16_reduction_bu(x) + self.downsample8(x_bu_2)
+        x_bu_3 = self.times16_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_2)
         x_td_2_ = self.times16_reduction_td(x)
 
         x = self.block7(x)
         x = self.block8(x)
         x = self.block9(x)
 
-        x_bu_4 = self.times32_reduction_bu(x) + self.downsample16(x_bu_3)
+        x_bu_4 = self.times32_reduction_bu(x) + nn.AdaptiveAvgPool2d(
+            (x.shape[2], x.shape[3])
+        )(x_bu_3)
         x_td_1 = self.times32_reduction_td(x)
 
         # Top-down branch computation
@@ -135,7 +139,7 @@ class TwoWayFeaturePyramid(nn.Module):
 
 if __name__ == "__main__":
     fpn = TwoWayFeaturePyramid().cuda()
-    p32, p16, p8, p4 = fpn(torch.rand(3, 3, 1024, 2048))
+    p32, p16, p8, p4 = fpn(torch.rand(3, 3, 512, 1024).cuda())
     print("p32", p32.shape)
     print("p16", p16.shape)
     print("p8", p8.shape)

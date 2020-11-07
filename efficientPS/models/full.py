@@ -43,7 +43,7 @@ class FullModel(nn.Module):
 
         self.fpn = TwoWayFeaturePyramid(activation)
         self.ss_head = SemanticSegmentationHead(
-            num_stuff + num_things, activation
+            num_things + num_stuff, activation
         )
         self.is_head = InstanceSegmentationHead(
             num_things, anchors, nms_threshold, activation
@@ -91,9 +91,7 @@ class FullModel(nn.Module):
 
 
 if __name__ == "__main__":
-    anchors = torch.tensor(
-        [[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]
-    ).cuda()
+    anchors = ANCHORS.cuda()
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
     out = full(torch.rand(1, 3, 512, 1024).cuda())

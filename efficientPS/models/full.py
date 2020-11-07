@@ -7,7 +7,7 @@ from .utilities import (
     MobileInvertedBottleneck,
     conv_1x1_bn,
 )
-from .fpn import TwoWayFeaturePyramid
+from .fpn_pretrained import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
@@ -97,10 +97,3 @@ if __name__ == "__main__":
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
     out = full(torch.rand(1, 3, 512, 1024).cuda())
-    # print(
-    #     "semantic_logits, classes, bboxes, mask",
-    #     semantic_logits.shape,
-    #     classes.shape,
-    #     bboxes.shape,
-    #     mask_logits.shape,
-    # )

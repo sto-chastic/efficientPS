@@ -100,6 +100,20 @@ from .train_core.losses import LossFunctions
     type=click.IntRange(min=1, max=2048),
     help="Enter 2 values: Crop the images at random locations to be of Height, Widht",
 )
+@click.option(
+    "--nms-threshold",
+    default=0.4,
+    show_default=True,
+    type=click.FloatRange(min=0.1, max=0.99),
+    help="NMS threshold",
+)
+@click.option(
+    "--minibatch-size",
+    default=4,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="NMS threshold",
+)
 def train_ps(
     input_dir,
     ground_truth_dir,
@@ -111,13 +125,13 @@ def train_ps(
     load,
     save_dir,
     epochs,
-    crop_sizes
+    crop_sizes,
+    nms_threshold,
+    minibatch_size,
 ):
     torch.cuda.empty_cache()
     use_cuda = use_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-
-    nms_threshold = 0.5
 
     full_model = FullModel(len(THINGS), len(STUFF), ANCHORS.to(device), nms_threshold).to(
         device
@@ -142,12 +156,10 @@ def train_ps(
         "root_folder_gt": ground_truth_dir,
         "cities_list": cities_train,
         "batches": batches,
-        "crop": crop_sizes
+        "crop": crop_sizes,
     }
 
-    train = Trainer(
-        **kwargs,
-    )
+    train = Trainer(minibatch_size, **kwargs)
 
     if traning_progress_plot:
         from visdom import Visdom

@@ -243,18 +243,18 @@ class RegionProposalNetwork(nn.Module):
         anchors_correction = self.anchors_conv(x)  # Bx(4k)xHxW
         objectness = self.objectness_conv(x)  # BxKxHxW
 
-        anchors_batch = torch.stack(batch * [self.anchors]).contiguous().view(
+        anchors_batch = torch.stack(batch * [self.anchors]).view(
             batch, self.num_anchors, 4, 1, 1
         )  # Bx4xKx1
-        anchors_correction = anchors_correction.contiguous().view(
+        anchors_correction = anchors_correction.view(
             batch, self.num_anchors, 4, height, width
         )
 
         x_bb_position = (
-            torch.arange(0, height).contiguous().view(1, 1, height, 1).to(x.device)
+            torch.arange(0, height).view(1, 1, height, 1).to(x.device)
         )
         y_bb_position = (
-            torch.arange(0, width).contiguous().view(1, 1, 1, width).to(x.device)
+            torch.arange(0, width).view(1, 1, 1, width).to(x.device)
         )
 
         transformations = torch.zeros_like(anchors_correction)
@@ -290,7 +290,7 @@ class RegionProposalNetwork(nn.Module):
             .permute((0, 2, 1))
         )
 
-        objectness = objectness.contiguous().view(batch, self.num_anchors, 1, -1)
+        objectness = objectness.view(batch, self.num_anchors, 1, -1)
         format_objectness = (
             objectness.permute((0, 2, 1, 3))
             .reshape(batch, 1, -1)

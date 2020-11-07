@@ -79,6 +79,9 @@ class LossFunctions:
 
                 objectness.append(gt_objectness)
 
+            if len(objectness) == 0:
+                continue
+
             objectness_stack = torch.stack(objectness)
             objectness_gt = objectness_stack.sum(0).ge(1)
 
@@ -129,6 +132,9 @@ class LossFunctions:
                 )
 
                 positive_matches.append(positive_match)
+
+            if len(gt_bboxesl) == 0:
+                continue
 
             gt_bboxes_raw = torch.stack(gt_bboxesl).to(primitive_bb[0].device)
             positives_stack = torch.stack(positive_matches)

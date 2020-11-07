@@ -208,8 +208,6 @@ class ROIFeatureExtraction(nn.Module):
                 print("Because there were no proposal anchors.")
                 extracting_anchors_by_batch.append(extracting_anchors)
 
-        # Here so far, working good
-
         return (
             torch.stack(extractions_by_batch),
             torch.stack(extracting_anchors_by_batch),
@@ -281,7 +279,7 @@ class InstanceSegmentationHead(nn.Module):
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(
             shape_[0], shape_[1], -1
-        ).permute(0, 2, 1)
+        ).permute(0, 2, 1).contiguous()
         core = self.core_fc(extracted_features)
 
         classes = (
@@ -289,9 +287,15 @@ class InstanceSegmentationHead(nn.Module):
             .view(shape_[0], self.num_things + 1, 1, shape_[1])
             .squeeze_(2)
         )
-        bboxes = self.fc_bb(core).view(
+
+        bboxes_correction = self.fc_bb(core).view(
             shape_[0], self.num_things, 4, shape_[1]
         )
+        bboxes = torch.zeros_like(bboxes_correction)
+        proposed = proposed_bboxes.permute(0, 2, 1)
+
+        bboxes[:, :, :2, :] = proposed[:, :2, :] + bboxes_correction[:, :, :2, :]
+        bboxes[:, :, 2:, :] = proposed[:, 2:, :] * torch.exp(bboxes_correction[:, :, 2:, :])
 
         elements = torch.chunk(
             extracted_features_.permute(1, 0, 2, 3, 4), shape_[1]

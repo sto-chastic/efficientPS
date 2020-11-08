@@ -85,6 +85,15 @@
             "console": "integratedTerminal",
         },
         {
+            "name": "fpn_pretrained",
+            "type": "python",
+            "request": "launch",
+            "module": "efficientPS.models.fpn_pretrained",
+            "subProcess": true,
+            "args": [],
+            "console": "integratedTerminal",
+        },
+        {
             "name": "train",
             "type": "python",
             "request": "launch",
@@ -104,6 +113,8 @@
                 "128",
                 "--crop-sizes",
                 "256",
+                "--minibatch-size",
+                "1"
             ],
             "console": "integratedTerminal",
         },

@@ -1,0 +1,3 @@
+[submodule "efficient_net_pytorch"]
+	path = efficientPS/third_party/efficient_net_pytorch
+	url = https://github.com/lukemelas/EfficientNet-PyTorch

@@ -1,4 +1,5 @@
 import click
+from tqdm import tqdm
 
 import torch
 from ..dataset.dataset import DataSet
@@ -53,13 +54,14 @@ class Core:
 class Trainer(Core):
     def __init__(
         self,
+        minibatch_size,
         **kargs,
     ):
         super().__init__(
             train=True,
             **kargs,
         )
-
+        self.minibatch_size = minibatch_size
     def __call__(
         self,
         model,
@@ -69,22 +71,50 @@ class Trainer(Core):
         model.train()
         losses = {}
 
-        for loaded_data in self.loader:
+        optimizer.zero_grad()
+        for i, loaded_data in enumerate(tqdm(self.loader)):
+            total_loss = 0.0
             image = loaded_data.get_image()
-            optimizer.zero_grad()
+
             inference = model(image)
             loss_fns = loss_class(loaded_data, inference)
             loss = loss_fns.get_total_loss()
 
-            loss.backward()
+            total_loss += loss
 
-            optimizer.step()
-            for key, _ in loss_fns.losses_dict.items():
+            for key, loss_ele in loss_fns.losses_dict.items():
                 if key not in losses:
                     losses[key] = 0.0
-                losses[key] += loss_fns.losses_dict[key].item()
+                if isinstance(loss_ele, torch.Tensor):
+                    losses[key] += loss_ele.item()
+                else:
+                    losses[key] += loss_ele
 
-            optimizer.step_scheduler(loss_fns)
+            if i % self.minibatch_size == 0 and i > 0:
+                total_loss /= self.minibatch_size
+                total_loss.backward()
+
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
+                print("W Update : Loss={}".format(total_loss))
+                for key, loss_ele in loss_fns.losses_dict.items():
+                    if isinstance(loss_fns.losses_dict[key], torch.Tensor):
+                        losses[key] += loss_fns.losses_dict[key].item()
+                    else:
+                        losses[key] += loss_fns.losses_dict[key]
+                    print("{}: {}".format(key, loss_ele))
+            
+            elif i == len(self.loader):
+                div = i - (i // self.minibatch_size)*self.minibatch_size
+                total_loss /= div
+                total_loss.backward()
+
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
+                print("W Update : Loss={}".format(total_loss))
+
         return losses
 
 

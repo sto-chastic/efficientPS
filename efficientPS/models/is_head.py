@@ -16,11 +16,12 @@ from .utilities import (
 class ROIFeatureExtraction(nn.Module):
     def __init__(self, anchors, nms_threshold, activation=nn.LeakyReLU):
         super(ROIFeatureExtraction, self).__init__()
-        # An anchor is centered at the sliding windowin question,
+        # An anchor is centered at the sliding window in question,
         # and is associated with a scale and aspectratio.
         # By  default  we  use  3  scales  and3 aspect ratios, yielding
         # k= 9anchors at each slidingposition.  For  a  convolutional
-        # feature  map  of  a  sizeW×H(typically∼2,400), there are WHk anchors intotal.
+        # feature  map  of  a  size W×H(typically∼2,400),
+        # there are WHk anchors in total.
         self.rps_p32 = RegionProposalNetwork(anchors, 32, nms_threshold)
         self.rps_p16 = RegionProposalNetwork(anchors, 16, nms_threshold)
         self.rps_p8 = RegionProposalNetwork(anchors, 8, nms_threshold)
@@ -32,7 +33,7 @@ class ROIFeatureExtraction(nn.Module):
 
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
-        feature_inputs = {1: p32, 2: p16, 3: p8, 4: p4}
+        feature_inputs = {1: p4, 2: p8, 3: p16, 4: p32}  #Size descending order
         # Main and bottom-up
         proposal_outputs = [
             self.rps_p32(p32),
@@ -52,23 +53,29 @@ class ROIFeatureExtraction(nn.Module):
         def zip_apply_to_batches(l1, l2, operation, *args):
             return [operation(x1, x2, *args) for x1, x2 in zip(l1, l2)]
 
-        # Scale properly
+        ### Scale properly
 
         scaled_anchors = [
-            apply_to_batches(p32_anchors, torch.mul, 32),
-            apply_to_batches(p16_anchors, torch.mul, 16),
-            apply_to_batches(p8_anchors, torch.mul, 8),
             apply_to_batches(p4_anchors, torch.mul, 4),
+            apply_to_batches(p8_anchors, torch.mul, 8),
+            apply_to_batches(p16_anchors, torch.mul, 16),
+            apply_to_batches(p32_anchors, torch.mul, 32),
         ]
 
         scores = [
-            p32_objectness,
-            p16_objectness,
-            p8_objectness,
             p4_objectness,
+            p8_objectness,
+            p16_objectness,
+            p32_objectness,
         ]
 
+        ### Sort each bounding box by its correct extraction level
+
         def get_channel(anchors):
+            """
+            This function selects from which level the features
+            are extracted based on the size of the box
+            """
             return torch.max(
                 torch.ones_like(anchors[:, 2]),
                 torch.min(
@@ -82,11 +89,11 @@ class ROIFeatureExtraction(nn.Module):
                 ),
             )
 
-        level_calculation = [
-            apply_to_batches(p32_anchors, get_channel),
-            apply_to_batches(p16_anchors, get_channel),
-            apply_to_batches(p8_anchors, get_channel),
+        new_level_calculation = [
             apply_to_batches(p4_anchors, get_channel),
+            apply_to_batches(p8_anchors, get_channel),
+            apply_to_batches(p16_anchors, get_channel),
+            apply_to_batches(p32_anchors, get_channel),
         ]
 
         anchors_per_level = {
@@ -103,35 +110,37 @@ class ROIFeatureExtraction(nn.Module):
         }
 
         # Nested loop but with short ranges. Could be vectorized later
-        for l in range(4):
-            for nl in range(1, 4):
+        for original_level in range(4):
+            for new_level in range(1, 5):
 
-                def sort_anchors_by_level(sc_anchors, level_num):
-                    return sc_anchors[level_num.eq(nl).nonzero()]
+                def sort_anchors_by_level(sc_anchors, calculated_level_nums):
+                    return sc_anchors[calculated_level_nums.eq(new_level).nonzero()]
 
-                anchors_per_level[nl].append(
+                anchors_per_level[new_level].append(
                     zip_apply_to_batches(
-                        scaled_anchors[l],
-                        level_calculation[l],
+                        scaled_anchors[original_level],
+                        new_level_calculation[original_level],
                         sort_anchors_by_level,
                     )
                 )
-                scores_per_level[nl].append(
+                scores_per_level[new_level].append(
                     zip_apply_to_batches(
-                        scores[l], level_calculation[l], sort_anchors_by_level
+                        scores[original_level], new_level_calculation[original_level], sort_anchors_by_level
                     )
                 )
 
-        def select_channels(p, n):
-            return p.index_select(0, n.long()).unsqueeze(1)
+        ### Extract features
 
-        def prepare_boxes(anchors):
+        def prepare_boxes(anchors, level):
+            scale = 2*2**level
+            vertices_anchors = convert_box_chw_to_vertices(anchors)
+            vertices_anchors /= scale
             return torch.cat(
                 (
-                    torch.zeros(anchors.shape[0])
-                    .to(anchors.device)
+                    torch.zeros(vertices_anchors.shape[0])
+                    .to(vertices_anchors.device)
                     .unsqueeze(-1),
-                    anchors,
+                    vertices_anchors,
                 ),
                 1,
             )
@@ -141,13 +150,13 @@ class ROIFeatureExtraction(nn.Module):
         for b in range(batches):
             joined_extractions = []
             extracting_anchors = []
-            for nl in range(1, 5):
-                if len(anchors_per_level[nl]) == 0:
+            for level in range(1, 5):
+                if len(anchors_per_level[level]) == 0:
                     continue
                 joined_anchors_per_level_l = []
                 joined_scores_per_level_l = []
                 for anch, sc in zip(
-                    anchors_per_level[nl], scores_per_level[nl]
+                    anchors_per_level[level], scores_per_level[level]
                 ):
                     if anch[b].shape[0] == 0:
                         continue
@@ -173,13 +182,27 @@ class ROIFeatureExtraction(nn.Module):
                     joined_anchors_per_level.index_select(0, nms_indices)
                 )
 
-                joined_extractions.append(
-                    self.roi_align(
-                        feature_inputs[nl][b].unsqueeze(0),
-                        prepare_boxes(joined_anchors_per_level),
-                    ).squeeze_(),
-                )
-                extracting_anchors.append(joined_anchors_per_level)
+                extractions = self.roi_align(
+                    feature_inputs[level][b].unsqueeze(0),
+                    prepare_boxes(joined_anchors_per_level, level),
+                ).squeeze_(),
+
+                if len(extractions[0].shape) > 3:
+                    non_empty_extractions_ind = torch.unique(extractions[0].nonzero()[:, 0])
+                    joined_extractions.append(
+                        extractions[0][non_empty_extractions_ind]
+                    )
+                    extracting_anchors.append(joined_anchors_per_level[non_empty_extractions_ind])
+                else:
+                    joined_extractions.append(
+                        extractions[0].unsqueeze(0)
+                    )
+                    extracting_anchors.append(joined_anchors_per_level)
+
+                # if torch.sum(non_empty_extractions_ind.ge(len(extractions[0]))).item() > 0:
+                #     continue
+
+                torch.cat(joined_extractions, 0)
 
             if len(joined_extractions) != 0:
                 extractions_by_batch.append(torch.cat(joined_extractions, 0))
@@ -266,7 +289,7 @@ class InstanceSegmentationHead(nn.Module):
         shape_ = extracted_features_.shape
         extracted_features = extracted_features_.view(
             shape_[0], shape_[1], -1
-        ).permute(0, 2, 1)
+        ).permute(0, 2, 1).contiguous()
         core = self.core_fc(extracted_features)
 
         classes = (
@@ -274,9 +297,15 @@ class InstanceSegmentationHead(nn.Module):
             .view(shape_[0], self.num_things + 1, 1, shape_[1])
             .squeeze_(2)
         )
-        bboxes = self.fc_bb(core).view(
+
+        bboxes_correction = self.fc_bb(core).view(
             shape_[0], self.num_things, 4, shape_[1]
         )
+        bboxes = torch.zeros_like(bboxes_correction)
+        proposed = proposed_bboxes.permute(0, 2, 1)
+
+        bboxes[:, :, :2, :] = proposed[:, :2, :] + bboxes_correction[:, :, :2, :]
+        bboxes[:, :, 2:, :] = proposed[:, 2:, :] * torch.exp(bboxes_correction[:, :, 2:, :])
 
         elements = torch.chunk(
             extracted_features_.permute(1, 0, 2, 3, 4), shape_[1]

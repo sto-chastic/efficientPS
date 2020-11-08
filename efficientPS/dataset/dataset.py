@@ -51,15 +51,24 @@ class PSSamples:
                         element["polygon"], offset=self.offset
                     ),
                 }
+
                 if (
-                    potential_box["bbox"][0][0] >= 0.0
-                    or potential_box["bbox"][0][1] >= 0.0
-                    or potential_box["bbox"][1][0] < self.x2
-                    or potential_box["bbox"][1][1] < self.y2
+                    self.fraction_box_inside(potential_box["bbox"], self.crop) > 0.7
                 ):
                     filtered_bboxes.append(potential_box)
 
         return filtered_bboxes
+
+    @staticmethod
+    def fraction_box_inside(box, crop):
+        xA = max(0, box[0][0])
+        yA = max(0, box[0][1])
+        xB = min(crop[1], box[1][0])
+        yB = min(crop[0], box[1][1])
+
+        interArea = max(xB - xA, 0) * max(yB - yA, 0)
+
+        return interArea / ((box[1][0]-box[0][0])*(box[1][1]-box[0][1]))
 
     def get_label_IDs(self):
         image = cv2.imread(self.gt_label_IDs_path, cv2.IMREAD_GRAYSCALE)

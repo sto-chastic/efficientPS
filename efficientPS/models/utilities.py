@@ -9,10 +9,36 @@ def outputSize(in_size, kernel_size, stride, padding):
     output = int((in_size - kernel_size + 2 * padding) / stride) + 1
     return output
 
+def outputSizeDeconv(in_size, kernel_size, stride, padding, output_padding):
+    return int((in_size-1)*stride-2*padding+(kernel_size-1)+output_padding+1)
 
-# def outputSizeDeconv(in_size, kernel_size, stride, padding, output_padding):
-#     return int((in_size-1)*stride-2*padding+(kernel_size-1)+output_padding+1)
+def convert_box_vertices_to_cwh(bbox):
+    if not isinstance(bbox, torch.Tensor):
+        bbox = torch.tensor(
+            [
+                bbox[0][0],
+                bbox[0][1],
+                bbox[1][0],
+                bbox[1][1],
+            ]
+        )
 
+    vt = torch.zeros_like(bbox)
+    vt[..., 2] = bbox[..., 2] - bbox[..., 0]
+    vt[..., 3] = bbox[..., 3] - bbox[..., 1]
+    vt[..., 0] = bbox[..., 0] + vt[..., 2]
+    vt[..., 1] = bbox[..., 1] - vt[..., 3]
+
+    return vt
+
+
+def convert_box_chw_to_vertices(bbox):
+    vt = torch.zeros_like(bbox)
+    vt[..., 0] = bbox[..., 0] - bbox[..., 2] / 2
+    vt[..., 1] = bbox[..., 1] - bbox[..., 3] / 2
+    vt[..., 2] = bbox[..., 0] + bbox[..., 2] / 2
+    vt[..., 3] = bbox[..., 1] + bbox[..., 3] / 2
+    return vt
 
 class RegionProposalOutput:
     def __init__(self):
@@ -195,7 +221,8 @@ class RegionProposalNetwork(nn.Module):
         self.nms_threshold = nms_threshold
         self.anchors = (
             anchors / scale
-        )  # torch.tensor([[-2.0, -2.0, 22.0, 22.0], [-2.0, -2.0, 22.0, 22.0]])
+        )  # Sample: torch.tensor([[0.0, 0.0, 22.0, 22.0]])
+        # self.anchors = convert_box_chw_to_vertices(self.anchors)
         self.scale = scale
 
         self.num_anchors = len(anchors)
@@ -204,7 +231,7 @@ class RegionProposalNetwork(nn.Module):
         self.bn1 = nn.BatchNorm2d(256)
 
         self.anchors_conv = conv_1x1_bn_custom_act(
-            256, self.num_anchors * 4, nn.ReLU
+            256, self.num_anchors * 4, activation=None
         )
         self.objectness_conv = conv_1x1_bn_custom_act(256, self.num_anchors)
 
@@ -263,6 +290,9 @@ class RegionProposalNetwork(nn.Module):
             .permute((0, 2, 1))
         )
 
+        if torch.sum(format_anchors.isnan()).item() > 0:
+            format_anchors
+
         objectness = objectness.view(batch, self.num_anchors, 1, -1)
         format_objectness = (
             objectness.permute((0, 2, 1, 3))
@@ -295,36 +325,6 @@ class RegionProposalNetwork(nn.Module):
         output.objectness = list_objectness
         output.transformations = list_transformations
         return output
-
-
-def convert_box_vertices_to_cwh(bbox):
-    if not isinstance(bbox, torch.Tensor):
-        bbox = torch.tensor(
-            [
-                bbox[0][0],
-                bbox[0][1],
-                bbox[1][0],
-                bbox[1][1],
-            ]
-        )
-
-    vt = torch.zeros_like(bbox)
-    vt[..., 2] = bbox[..., 2] - bbox[..., 0]
-    vt[..., 3] = bbox[..., 3] - bbox[..., 1]
-    vt[..., 0] = bbox[..., 0] + vt[..., 2]
-    vt[..., 1] = bbox[..., 1] - vt[..., 3]
-
-    return vt
-
-
-def convert_box_chw_to_vertices(bbox):
-    vt = torch.zeros_like(bbox)
-    vt[..., 0] = bbox[..., 0] - bbox[..., 2] / 2
-    vt[..., 1] = bbox[..., 1] - bbox[..., 3] / 2
-    vt[..., 2] = bbox[..., 0] + bbox[..., 2] / 2
-    vt[..., 3] = bbox[..., 1] + bbox[..., 3] / 2
-    return vt
-
 
 if __name__ == "__main__":
     # dpc = DensePredictionCell()

@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from . import *
 
 from .utilities import (
     DepthSeparableConv2d,
     MobileInvertedBottleneck,
     conv_1x1_bn,
 )
-from .fpn import TwoWayFeaturePyramid
+from .fpn_pretrained import TwoWayFeaturePyramid
 from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
 
@@ -43,7 +44,7 @@ class FullModel(nn.Module):
 
         self.fpn = TwoWayFeaturePyramid(activation)
         self.ss_head = SemanticSegmentationHead(
-            num_stuff + num_things, activation
+            num_things + num_stuff, activation
         )
         self.is_head = InstanceSegmentationHead(
             num_things, anchors, nms_threshold, activation
@@ -53,7 +54,9 @@ class FullModel(nn.Module):
     def forward(self, inp):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
+        print("state: fpn")
         semantic_logits = self.ss_head(p32, p16, p8, p4)
+        print("state: ss")
         (
             classes,
             bboxes,
@@ -61,7 +64,7 @@ class FullModel(nn.Module):
             proposed_bboxes,
             primitive_anchors,
         ) = self.is_head(p32, p16, p8, p4)
-
+        print("state: is")
         return PSOutput(
             semantic_logits,
             classes,
@@ -91,16 +94,7 @@ class FullModel(nn.Module):
 
 
 if __name__ == "__main__":
-    anchors = torch.tensor(
-        [[1.0, 1.0, 220.0, 320.0], [1.0, 1.0, 320.0, 220.0]]
-    ).cuda()
+    anchors = ANCHORS.cuda()
 
     full = FullModel(10, 8, anchors, 0.3).cuda()
     out = full(torch.rand(1, 3, 512, 1024).cuda())
-    # print(
-    #     "semantic_logits, classes, bboxes, mask",
-    #     semantic_logits.shape,
-    #     classes.shape,
-    #     bboxes.shape,
-    #     mask_logits.shape,
-    # )

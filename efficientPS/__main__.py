@@ -182,7 +182,7 @@ def train_ps(
             optimizer=optimizer,
         )
 
-        total_train_loss = train_loss.losses_dict["total_loss"]
+        total_train_loss = train_loss["full_model"]
         print(f"{epoch}/{epochs} : Loss={total_train_loss}")
 
         if traning_progress_plot:

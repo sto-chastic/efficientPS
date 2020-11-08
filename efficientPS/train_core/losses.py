@@ -25,6 +25,8 @@ class LossFunctions:
         self.ground_truth = ground_truth
         self.inference = inference
 
+        self.first_stage_objectness_thr = 0.7  # According to Faster R-CNN paper
+        self.first_stage_nonobjectness_thr = 0.3  # According to Faster R-CNN paper
         self.objectness_thr = 0.5  # According to Mask R-CNN paper
 
         self.first_stage_num_samples = 256  # According to EfficientPS paper
@@ -58,13 +60,16 @@ class LossFunctions:
     def roi_proposal_objectness(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
-
+        if len(gt_bb) == 0:
+            return 0.0
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
         total_loss = 0.0
+        number_samples = 0
         for i in range(4):
-            objectness = []
+            objectness_true = []
+            objectness_false = []
             level_primitives = self.inference.primitive_anchors[i]
             primitive_bb = level_primitives.anchors
             primitive_obj = level_primitives.objectness
@@ -73,93 +78,135 @@ class LossFunctions:
                 edges_bb = convert_box_chw_to_vertices(
                     primitive_bb[0] * level_primitives.scale
                 )
-                gt_objectness = iou_function(edges_bb, bb["bbox"]).ge(
+                iou = iou_function(edges_bb, bb["bbox"]).ge(
                     self.objectness_thr
                 )
 
-                objectness.append(gt_objectness)
+                gt_objectness_true = iou.ge(
+                    self.first_stage_objectness_thr
+                )
 
-            if len(objectness) == 0:
-                continue
+                objectness_true.append(gt_objectness_true)
 
-            objectness_stack = torch.stack(objectness)
-            objectness_gt = objectness_stack.sum(0).ge(1)
+                gt_objectness_false = ~iou.ge(
+                    self.first_stage_nonobjectness_thr
+                )
 
-            loss = self._bb_proposal_objectness(
-                objectness_gt, primitive_obj[0]
+                objectness_false.append(gt_objectness_false)
+
+            # Positive matches
+            objectness_stack_true = torch.stack(objectness_true)
+            objectness_gt_t_ind = objectness_stack_true.nonzero()[:, 1]
+
+            positive_loss = self._bb_partial_proposal_objectness(
+                primitive_obj[0][objectness_gt_t_ind]
             )
 
-            if objectness_gt.shape[0] > num_samples_per_stage:
+            # Negative matches
+            objectness_stack_false = torch.stack(objectness_false)
+            objectness_gt_f_ind = objectness_stack_false.nonzero()[:, 1]
+
+            negative_loss = self._bb_partial_proposal_objectness(
+                primitive_obj[0][objectness_gt_f_ind]
+            )
+
+            loss = torch.cat([positive_loss, negative_loss])
+
+            if loss.shape[0] > num_samples_per_stage:
                 samples = random.sample(
-                    range(objectness_gt.shape[0]), num_samples_per_stage
+                    range(loss.shape[0]), num_samples_per_stage
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples]) / num_samples_per_stage
+                total_loss += torch.sum(loss[samples])
+                number_samples += num_samples_per_stage
             else:
                 total_loss += torch.sum(loss)
+                number_samples += loss.shape[0]
 
-        return total_loss
+        return total_loss / (number_samples+1e-3)
 
     @staticmethod
-    def _bb_proposal_objectness(gt_objectness, objectness):
-        partial_objectness_loss = gt_objectness * torch.log(objectness) + (
-            ~gt_objectness
-        ) * torch.log(1 - objectness)
+    def _bb_partial_proposal_objectness(pred_class):
+        partial_objectness_loss = torch.log(pred_class)
         return -partial_objectness_loss
 
     def roi_proposal_regression(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
-
+        if len(gt_bb) == 0:
+            return 0.0
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
         total_loss = 0.0
+        number_samples = 0
         for i in range(4):
             positive_matches = []
             level_primitives = self.inference.primitive_anchors[i]
             primitive_bb = level_primitives.anchors
             primitive_transformations = level_primitives.transformations
 
+            ious = []
             gt_bboxesl = []
             for bb in gt_bb:
                 edges_bb = convert_box_chw_to_vertices(
                     primitive_bb[0] * level_primitives.scale
                 )
                 gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
-                positive_match = iou_function(edges_bb, bb["bbox"]).ge(
+                iou = iou_function(edges_bb, bb["bbox"])
+                positive_match = iou.ge(
                     self.objectness_thr
                 )
 
+                ious.append(iou)
                 positive_matches.append(positive_match)
 
             if len(gt_bboxesl) == 0:
                 continue
 
-            gt_bboxes_raw = torch.stack(gt_bboxesl).to(primitive_bb[0].device)
+            gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device).float()
             positives_stack = torch.stack(positive_matches)
-            objectness_gt = positives_stack.sum(0).ge(1)
 
-            positives_index = positives_stack.nonzero()
+            if len(positives_stack.nonzero()) > 0:
+                # Calculate with only the positiove matches (above threshold)
+                positive_matches_gt = positives_stack.nonzero()[:,0]
+                positive_matches_inf = positives_stack.nonzero()[:,1]
 
-            bboxes = primitive_bb[0].index_select(0, positives_index[:, 1])
-            gt_bboxes = gt_bboxes_raw.index_select(0, positives_index[:, 0])
-            transf = primitive_transformations[0].index_select(
-                0, positives_index[:, 1]
-            )
+                loss = self._bb_regression(
+                    primitive_bb[0][positive_matches_inf], gt_bboxes_stack[positive_matches_gt], primitive_transformations[0][positive_matches_inf]
+                )
 
-            loss = self._bb_regression(bboxes, gt_bboxes, transf)
+            # If no positive is found, then: "the anchor/anchors  with  
+            # the  highest  Intersection-over-Union (IoU) overlap with 
+            # a ground-truth box" - Faster-RCNN paper
+            closest_iou = torch.stack(ious).argmax(dim=1)
+            no_matching = (~torch.sum(positives_stack, 1).gt(0)).nonzero().squeeze(1)
+            closest_iou_ind = closest_iou[no_matching]
 
-            if bboxes.shape[0] > num_samples_per_stage:
+            if len(positives_stack.nonzero()) > 0:
+                loss = torch.cat([
+                    loss,
+                    self._bb_regression(
+                        primitive_bb[0][closest_iou_ind], gt_bboxes_stack[no_matching], primitive_transformations[0][closest_iou_ind]
+                    )
+                ])
+            else:
+                loss = self._bb_regression(
+                    primitive_bb[0][closest_iou_ind], gt_bboxes_stack[no_matching], primitive_transformations[0][closest_iou_ind]
+                )
+
+            if loss.shape[0] > num_samples_per_stage:
                 samples = random.sample(
-                    range(bboxes.shape[0]), num_samples_per_stage
+                    range(loss.shape[0]), num_samples_per_stage
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples]) / num_samples_per_stage
+                total_loss += torch.sum(loss[samples])
+                number_samples += num_samples_per_stage
             else:
                 total_loss += torch.sum(loss)
+                number_samples += loss.shape[0]
 
-        return total_loss
+        return total_loss / (number_samples+1e-3)
 
     @staticmethod
     def _bb_regression(
@@ -190,6 +237,8 @@ class LossFunctions:
     def classification_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
+        if len(gt_bb) == 0:
+            return 0.0
 
         objectness = []
         ious = []
@@ -232,13 +281,15 @@ class LossFunctions:
                 torch.sum(loss[samples]) / self.second_stage_num_samples
             )
         else:
-            total_loss = torch.sum(loss)
+            total_loss = torch.sum(loss) / (loss.shape[0]+1e-3)
 
         return total_loss
 
     def regression_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
+        if len(gt_bb) == 0:
+            return 0.0
 
         proposed_bboxes = self.inference.proposed_bboxes
         inference_bboxes = self.inference.bboxes
@@ -265,17 +316,31 @@ class LossFunctions:
             ious.append(iou)
             gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
 
-        closest_iou = torch.stack(ious).argmax(dim=0)
-        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device)
-        gt_bboxes = gt_bboxes_stack.index_select(0, closest_iou)
-
+        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device).float()
         objectness_stack = torch.stack(objectness)
-        objectness_gt = objectness_stack.sum(0).ge(1)
+
+        # Calculate with only the positiove matches (above threshold)
+        positive_matches_gt = objectness_stack.nonzero()[:,0]
+        positive_matches_inf = objectness_stack.nonzero()[:,1]
 
         loss = self._bb_regression(
-            selected_inference_bb[0], gt_bboxes, proposed_bboxes[0]
+            selected_inference_bb[0][positive_matches_inf], gt_bboxes_stack[positive_matches_gt], proposed_bboxes[0][positive_matches_inf]
         )
-        loss = loss.masked_select(objectness_gt)
+
+        # If no positive is found, then: "the anchor/anchors  with  
+        # the  highest  Intersection-over-Union (IoU) overlap with 
+        # a ground-truth box" - Faster-RCNN paper
+        closest_iou = torch.stack(ious).argmax(dim=1)
+        no_matching = (~torch.sum(objectness_stack, 1).gt(0)).nonzero().squeeze(1)
+        closest_iou_ind = closest_iou[no_matching]
+
+        loss = torch.cat((
+            loss,
+            self._bb_regression(
+                selected_inference_bb[0][closest_iou_ind], gt_bboxes_stack[no_matching], proposed_bboxes[0][closest_iou_ind]
+            )
+        ))
+
         if loss.shape[0] > self.second_stage_num_samples:
             samples = random.sample(
                 range(loss.shape[0]), self.second_stage_num_samples
@@ -285,13 +350,16 @@ class LossFunctions:
                 torch.sum(loss[samples]) / self.second_stage_num_samples
             )
         else:
-            total_loss = torch.sum(loss)
+            total_loss = torch.sum(loss) / (loss.shape[0]+1e-3)
 
         return total_loss
 
     def mask_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
+        if len(gt_bb) == 0:
+            return 0.0
+
         mask_logits = self.inference.mask_logits
         proposed_bboxes = self.inference.proposed_bboxes
         gt_mask_seg = id_to_things_id_expanded(
@@ -313,28 +381,55 @@ class LossFunctions:
             ious.append(iou)
             gt_bboxesl.append(convert_box_vertices_to_cwh(bb["bbox"]))
 
-        closest_iou = torch.stack(ious).argmax(dim=0)
-        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device)
-        gt_bboxes = gt_bboxes_stack.index_select(0, closest_iou)
-        gt_classes = torch.tensor(gt_classes, device=iou.device).index_select(
-            0, closest_iou
-        )
-
-        gt_bb_classes = torch.cat([gt_classes.unsqueeze(1), gt_bboxes], dim=1)
-
+        gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device).float()
         objectness_stack = torch.stack(objectness)
-        objectness_gt = objectness_stack.sum(0).ge(1)
+        # objectness_gt = objectness_stack.sum(0).ge(1)
 
-        # gt_bb_classes = gt_bb_classes.index_select(0, objectness_gt.nonzero()[:,0])
-        # mask_logits = mask_logits.index_select(1, objectness_gt.nonzero()[:,0])
+        # Calculate with only the positiove matches (above threshold)
+        positive_matches_gt = objectness_stack.nonzero()[:,0]
+        positive_matches_inf = objectness_stack.nonzero()[:,1]
+
+        gt_bboxes_ = gt_bboxes_stack[positive_matches_gt]
+        gt_classes_ = torch.tensor(gt_classes, device=iou.device)[positive_matches_gt]
+
+        gt_bb_classes = torch.cat([gt_classes_.unsqueeze(1), gt_bboxes_], dim=1)
+
+        gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
+
+
+        if len(positive_matches_inf) > 0:
+            selected_mask = index_select2D(
+                mask_logits.permute(0, 3, 4, 2, 1).index_select(4,positive_matches_inf), gt_classes_ - 1
+            )
+
+            loss = self._cross_entropy(selected_mask, gt_masks)
+
+        # If no positive is found, then: "the anchor/anchors  with  
+        # the  highest  Intersection-over-Union (IoU) overlap with 
+        # a ground-truth box" - Faster-RCNN paper
+        closest_iou = torch.stack(ious).argmax(dim=1)
+        no_matching = (~torch.sum(objectness_stack, 1).gt(0)).nonzero().squeeze(1)
+        closest_iou_ind = closest_iou[no_matching]
+
+        gt_bboxes_ = gt_bboxes_stack[no_matching]
+        gt_classes_ = torch.tensor(gt_classes, device=iou.device)[no_matching]
+
+        gt_bb_classes = torch.cat([gt_classes_.unsqueeze(1), gt_bboxes_], dim=1)
+
         gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
 
         selected_mask = index_select2D(
-            mask_logits.permute(0, 3, 4, 2, 1), gt_classes - 1
+            mask_logits.permute(0, 3, 4, 2, 1).index_select(4, closest_iou_ind), gt_classes_ - 1
         )
 
-        loss = self._cross_entropy(selected_mask, gt_masks)
-        return torch.sum(loss.index_select(0, objectness_gt.nonzero()[:, 0]))
+        if len(positive_matches_inf) > 0:
+            loss = torch.cat((
+                loss,
+                self._cross_entropy(selected_mask, gt_masks)
+            ))
+        else:
+            loss = self._cross_entropy(selected_mask, gt_masks)
+        return torch.sum(loss) / len(loss)
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):

@@ -85,7 +85,10 @@ class Trainer(Core):
             for key, loss_ele in loss_fns.losses_dict.items():
                 if key not in losses:
                     losses[key] = 0.0
-                losses[key] += loss_ele.item()
+                if isinstance(loss_ele, torch.Tensor):
+                    losses[key] += loss_ele.item()
+                else:
+                    losses[key] += loss_ele
 
             if i % self.minibatch_size == 0 and i > 0:
                 total_loss /= self.minibatch_size
@@ -96,7 +99,10 @@ class Trainer(Core):
                 optimizer.zero_grad()
                 print("W Update : Loss={}".format(total_loss))
                 for key, loss_ele in loss_fns.losses_dict.items():
-                    losses[key] += loss_fns.losses_dict[key].item()
+                    if isinstance(loss_fns.losses_dict[key], torch.Tensor):
+                        losses[key] += loss_fns.losses_dict[key].item()
+                    else:
+                        losses[key] += loss_fns.losses_dict[key]
                     print("{}: {}".format(key, loss_ele))
             
             elif i == len(self.loader):

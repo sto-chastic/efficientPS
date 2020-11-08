@@ -187,12 +187,22 @@ class ROIFeatureExtraction(nn.Module):
                     prepare_boxes(joined_anchors_per_level, level),
                 ).squeeze_(),
 
-                non_empty_extractions_ind = torch.unique(extractions[0].nonzero()[:, 0])
+                if len(extractions[0].shape) > 3:
+                    non_empty_extractions_ind = torch.unique(extractions[0].nonzero()[:, 0])
+                    joined_extractions.append(
+                        extractions[0][non_empty_extractions_ind]
+                    )
+                    extracting_anchors.append(joined_anchors_per_level[non_empty_extractions_ind])
+                else:
+                    joined_extractions.append(
+                        extractions[0].unsqueeze(0)
+                    )
+                    extracting_anchors.append(joined_anchors_per_level)
 
-                joined_extractions.append(
-                    extractions[0][non_empty_extractions_ind]
-                )
-                extracting_anchors.append(joined_anchors_per_level[non_empty_extractions_ind])
+                # if torch.sum(non_empty_extractions_ind.ge(len(extractions[0]))).item() > 0:
+                #     continue
+
+                torch.cat(joined_extractions, 0)
 
             if len(joined_extractions) != 0:
                 extractions_by_batch.append(torch.cat(joined_extractions, 0))

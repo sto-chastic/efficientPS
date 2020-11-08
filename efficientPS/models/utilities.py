@@ -290,6 +290,9 @@ class RegionProposalNetwork(nn.Module):
             .permute((0, 2, 1))
         )
 
+        if torch.sum(format_anchors.isnan()).item() > 0:
+            format_anchors
+
         objectness = objectness.view(batch, self.num_anchors, 1, -1)
         format_objectness = (
             objectness.permute((0, 2, 1, 3))

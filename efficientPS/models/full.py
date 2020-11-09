@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from . import *
+from ..train_core.utilities import index_select2D
+
 
 from .utilities import (
     DepthSeparableConv2d,
@@ -29,6 +31,38 @@ class PSOutput:
         self.mask_logits = mask_logits
         self.proposed_bboxes = proposed_bboxes
         self.primitive_anchors = primitive_anchors
+
+    def get_classes(self):
+        return torch.exp(self.classes[:, 1:, :]) / torch.sum(torch.exp(self.classes[:, 1:, :]), 1)
+
+    def get_confidence(self):
+        return torch.exp(self.classes[:, 1:, :])
+
+    def pick_mask_class_confidence(self):
+        index = torch.argmax(self.get_classes(), 1)
+        
+        mask_logits = []
+        confidences = []
+        for b in range(self.bboxes.shape[0]):
+            mask_logits.append(
+                index_select2D(
+                    self.mask_logits[b].permute(2, 3, 1, 0),
+                    index[b]
+                )
+            )
+            confidences.append(
+                index_select2D(
+                    self.get_confidence()[b],
+                    index[b]
+                )
+            )
+
+        mask_logits = torch.stack(mask_logits)
+        conficence = torch.stack(confidences)
+
+        classes = index + 1
+        return mask_logits, classes, conficence
+
 
 
 class FullModel(nn.Module):

@@ -214,11 +214,10 @@ class DensePredictionCell(nn.Module):
 
 class RegionProposalNetwork(nn.Module):
     def __init__(
-        self, anchors, scale, nms_threshold=0.7, activation=nn.LeakyReLU
+        self, anchors, scale, activation=nn.LeakyReLU
     ):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
-        self.nms_threshold = nms_threshold
         self.anchors = (
             anchors / scale
         )  # Sample: torch.tensor([[0.0, 0.0, 22.0, 22.0]])

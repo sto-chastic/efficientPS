@@ -22,10 +22,10 @@ class ROIFeatureExtraction(nn.Module):
         # k= 9anchors at each slidingposition.  For  a  convolutional
         # feature  map  of  a  size W×H(typically∼2,400),
         # there are WHk anchors in total.
-        self.rps_p32 = RegionProposalNetwork(anchors, 32, nms_threshold)
-        self.rps_p16 = RegionProposalNetwork(anchors, 16, nms_threshold)
-        self.rps_p8 = RegionProposalNetwork(anchors, 8, nms_threshold)
-        self.rps_p4 = RegionProposalNetwork(anchors, 4, nms_threshold)
+        self.rps_p32 = RegionProposalNetwork(anchors, 32)
+        self.rps_p16 = RegionProposalNetwork(anchors, 16)
+        self.rps_p8 = RegionProposalNetwork(anchors, 8)
+        self.rps_p4 = RegionProposalNetwork(anchors, 4)
 
         self.roi_align = RoIAlign((14, 14), spatial_scale=1, sampling_ratio=-1)
 

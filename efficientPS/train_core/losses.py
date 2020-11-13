@@ -78,9 +78,7 @@ class LossFunctions:
                 edges_bb = convert_box_chw_to_vertices(
                     primitive_bb[0] * level_primitives.scale
                 )
-                iou = iou_function(edges_bb, bb["bbox"]).ge(
-                    self.objectness_thr
-                )
+                iou = iou_function(edges_bb, bb["bbox"])
 
                 gt_objectness_true = iou.ge(
                     self.first_stage_objectness_thr

@@ -248,6 +248,8 @@ class LossFunctions:
             edges_bb = convert_box_chw_to_vertices(proposed_bboxes[0])
             iou = iou_function(edges_bb, bb["bbox"])
             gt_objectness = iou.ge(self.objectness_thr)
+            # Usually samples below T_H and above T_L are ignored, but
+            # since T_H = T_L, we do not ignore samples
 
             objectness.append(gt_objectness)
             ious.append(iou)
@@ -309,6 +311,8 @@ class LossFunctions:
             edges_bb = convert_box_chw_to_vertices(selected_inference_bb[0])
             iou = iou_function(edges_bb, bb["bbox"])
             gt_objectness = iou.ge(self.objectness_thr)
+            # Usually samples below T_H and above T_L are ignored, but
+            # since T_H = T_L, we do not ignore sample
 
             objectness.append(gt_objectness)
             ious.append(iou)

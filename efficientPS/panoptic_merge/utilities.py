@@ -8,7 +8,6 @@ from ..dataset import *
 def filter_on_confidence(
     confidence: np.ndarray, logits: np.ndarray, thresh: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # not vectorized - sorry not sorry
     filtered_logits = []
     corresponding_confidence = []
     corresponding_indices = []
@@ -34,7 +33,6 @@ def sort_by_confidence(
 def scale_pad_logits_with_bbox(
     logits: np.ndarray, og_size: tuple, bboxes: np.ndarray
 ) -> Tensor:
-    # also not vectorized, sorry
     out_tensor = []
     for (i, array) in enumerate(logits):
         tensor = Tensor(array)

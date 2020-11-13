@@ -6,6 +6,7 @@ from ..dataset.dataset import DataSet
 from ..models.full import PSOutput
 from ..panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 
+
 class Core:
     def __init__(
         self,
@@ -62,6 +63,7 @@ class Trainer(Core):
             **kargs,
         )
         self.minibatch_size = minibatch_size
+
     def __call__(
         self,
         model,
@@ -99,10 +101,9 @@ class Trainer(Core):
                 optimizer.zero_grad()
                 print("W Update : Loss={}".format(total_loss))
                 self.print_loss(loss_fns.losses_dict)
-                panoptic_fusion_module(inference)
-            
+
             elif i == len(self.loader):
-                div = i - (i // self.minibatch_size)*self.minibatch_size
+                div = i - (i // self.minibatch_size) * self.minibatch_size
                 total_loss /= div
                 total_loss.backward()
 
@@ -110,12 +111,11 @@ class Trainer(Core):
                 optimizer.step_scheduler(loss_fns)
                 optimizer.zero_grad()
                 print("W Update : Loss={}".format(total_loss))
-                panoptic_fusion_module(inference, probe_name="./probe.png")
 
             if self.visdom is not None:
                 for loss_type, loss in loss_fns.losses_dict.items():
                     if isinstance(loss, torch.Tensor):
-                        loss =  loss.item()
+                        loss = loss.item()
                     self.visdom.plot(loss_type, "training", "training", loss)
 
         for key, loss_ele in losses.items():

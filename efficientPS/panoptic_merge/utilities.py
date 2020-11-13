@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 from ..dataset import *
 
+
 def filter_on_confidence(
     confidence: np.ndarray, logits: np.ndarray, thresh: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -17,7 +18,11 @@ def filter_on_confidence(
             filtered_logits.append(el)
             corresponding_confidence.append(confidence[i])
             corresponding_indices.append(i)
-    return np.array(filtered_logits), np.array(corresponding_confidence), np.array(corresponding_indices)
+    return (
+        np.array(filtered_logits),
+        np.array(corresponding_confidence),
+        np.array(corresponding_indices),
+    )
 
 
 def sort_by_confidence(
@@ -38,8 +43,13 @@ def scale_pad_logits_with_bbox(
         tensor = Tensor(array)
         tensor = tensor.unsqueeze(0).unsqueeze(0)
         x, y, w, h = bboxes[:, i]
-        x, y, h, w = round(x), round(y), round(h), round(w),
-        if h*w == 0:
+        x, y, h, w = (
+            round(x),
+            round(y),
+            round(h),
+            round(w),
+        )
+        if h * w == 0:
             repadded_tensor = zeros(og_size[0], og_size[1])
             out_tensor.append(repadded_tensor)
             continue
@@ -52,10 +62,13 @@ def scale_pad_logits_with_bbox(
         eff_y = round(y - h // 2)
 
         repadded_tensor = zeros(og_size[0], og_size[1])
-        repadded_tensor = overlay_image_alpha(repadded_tensor, scaled_tensor, (eff_x, eff_y))
+        repadded_tensor = overlay_image_alpha(
+            repadded_tensor, scaled_tensor, (eff_x, eff_y)
+        )
 
         out_tensor.append(repadded_tensor)
     return stack(out_tensor)
+
 
 def overlay_image_alpha(img, img_overlay, pos):
     x, y = pos
@@ -75,12 +88,14 @@ def overlay_image_alpha(img, img_overlay, pos):
     # channels = img.shape[2]
 
     # for c in range(channels):
-    img[y1:y2, x1:x2] = (img_overlay[y1o:y2o, x1o:x2o])
+    img[y1:y2, x1:x2] = img_overlay[y1o:y2o, x1o:x2o]
 
     return img
 
+
 def logit_prediction(logits: np.ndarray) -> np.ndarray:
     return np.argmax(logits, axis=0)
+
 
 def zero_out_nonbbox(logits: np.ndarray, bboxes: np.ndarray) -> Tensor:
     out_tensor = []
@@ -107,7 +122,7 @@ def zero_out_nonbbox(logits: np.ndarray, bboxes: np.ndarray) -> Tensor:
         if h <= 0 and w <= 0:
             out_tensor.append(eff_tensor)
             continue
-        
+
         eff_tensor[eff_y : eff_y + h, eff_x : eff_x + w] = tensor[
             eff_y : eff_y + h, eff_x : eff_x + w
         ]
@@ -118,8 +133,10 @@ def zero_out_nonbbox(logits: np.ndarray, bboxes: np.ndarray) -> Tensor:
 def panoptic_fusion(MLa: Tensor, MLb: Tensor) -> Tensor:
     return (sigmoid(MLa) + sigmoid(MLb)) * (MLa + MLb)
 
+
 def merge_fusion_semantic_things(array1: np.ndarray, array2: np.ndarray):
     return np.concatenate((array1, array2))
+
 
 def fill_canvas(intermediate_prediction, filtered_classes, n_stuff):
     # Fill with things instances
@@ -130,7 +147,8 @@ def fill_canvas(intermediate_prediction, filtered_classes, n_stuff):
     canvas = np.take(np.array(THINGS_STUFF_TO_ID), canvas)
     # Fill with stuff
     intermediate_prediction_stuff = ~mask * intermediate_prediction
-    intermediate_prediction_stuff = np.take(np.array(THINGS_STUFF_TO_ID), intermediate_prediction_stuff)
+    intermediate_prediction_stuff = np.take(
+        np.array(THINGS_STUFF_TO_ID), intermediate_prediction_stuff
+    )
 
     return canvas + intermediate_prediction_stuff
-     

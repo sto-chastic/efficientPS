@@ -9,8 +9,16 @@ def outputSize(in_size, kernel_size, stride, padding):
     output = int((in_size - kernel_size + 2 * padding) / stride) + 1
     return output
 
+
 def outputSizeDeconv(in_size, kernel_size, stride, padding, output_padding):
-    return int((in_size-1)*stride-2*padding+(kernel_size-1)+output_padding+1)
+    return int(
+        (in_size - 1) * stride
+        - 2 * padding
+        + (kernel_size - 1)
+        + output_padding
+        + 1
+    )
+
 
 def convert_box_vertices_to_cwh(bbox):
     if not isinstance(bbox, torch.Tensor):
@@ -26,8 +34,8 @@ def convert_box_vertices_to_cwh(bbox):
     vt = torch.zeros_like(bbox)
     vt[..., 2] = bbox[..., 2] - bbox[..., 0]
     vt[..., 3] = bbox[..., 3] - bbox[..., 1]
-    vt[..., 0] = bbox[..., 0] + vt[..., 2]/2
-    vt[..., 1] = bbox[..., 1] + vt[..., 3]/2
+    vt[..., 0] = bbox[..., 0] + vt[..., 2] / 2
+    vt[..., 1] = bbox[..., 1] + vt[..., 3] / 2
 
     return vt
 
@@ -39,6 +47,7 @@ def convert_box_chw_to_vertices(bbox):
     vt[..., 2] = bbox[..., 0] + bbox[..., 2] / 2
     vt[..., 3] = bbox[..., 1] + bbox[..., 3] / 2
     return vt
+
 
 class RegionProposalOutput:
     def __init__(self):
@@ -213,9 +222,7 @@ class DensePredictionCell(nn.Module):
 
 
 class RegionProposalNetwork(nn.Module):
-    def __init__(
-        self, anchors, scale, activation=nn.LeakyReLU
-    ):
+    def __init__(self, anchors, scale, activation=nn.LeakyReLU):
         super(RegionProposalNetwork, self).__init__()
         self.activation = activation()
         self.anchors = (
@@ -324,6 +331,7 @@ class RegionProposalNetwork(nn.Module):
         output.objectness = list_objectness
         output.transformations = list_transformations
         return output
+
 
 if __name__ == "__main__":
     # dpc = DensePredictionCell()

@@ -53,7 +53,8 @@ class PSSamples:
                 }
 
                 if (
-                    self.fraction_box_inside(potential_box["bbox"], self.crop) > 0.7
+                    self.fraction_box_inside(potential_box["bbox"], self.crop)
+                    > 0.7
                 ):
                     filtered_bboxes.append(potential_box)
 
@@ -68,7 +69,7 @@ class PSSamples:
 
         interArea = max(xB - xA, 0) * max(yB - yA, 0)
 
-        return interArea / ((box[1][0]-box[0][0])*(box[1][1]-box[0][1]))
+        return interArea / ((box[1][0] - box[0][0]) * (box[1][1] - box[0][1]))
 
     def get_label_IDs(self):
         image = cv2.imread(self.gt_label_IDs_path, cv2.IMREAD_GRAYSCALE)

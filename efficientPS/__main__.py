@@ -15,6 +15,7 @@ from .train_core.trainer import Trainer, Validator
 from .train_core.losses import LossFunctions
 from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 
+
 @click.command()
 @click.option(
     "-i",
@@ -160,9 +161,9 @@ def train_ps(
     use_cuda = use_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    full_model = FullModel(len(THINGS), len(STUFF), ANCHORS.to(device), nms_threshold).to(
-        device
-    )
+    full_model = FullModel(
+        len(THINGS), len(STUFF), ANCHORS.to(device), nms_threshold
+    ).to(device)
 
     # This format allows to split the model and train parameters
     # with different optimizers. For now, full model is trained
@@ -198,7 +199,7 @@ def train_ps(
         "cities_list": cities_train,
         "batches": batches,
         "crop": crop_sizes,
-        "visdom": line_plotter
+        "visdom": line_plotter,
     }
 
     train = Trainer(minibatch_size, **kwargs)
@@ -225,7 +226,9 @@ def train_ps(
         total_validation_loss = validation_loss["full_model"]
         print(f"{epoch}/{epochs} : Loss={total_validation_loss}")
 
-        output_image, intermediate_logits = panoptic_fusion_module(inference , probe_name="./validation{}.png".format(epoch))
+        output_image, intermediate_logits = panoptic_fusion_module(
+            inference, probe_name="./validation{}.png".format(epoch)
+        )
 
         if line_plotter:
             for loss_type, loss in train_loss.items():

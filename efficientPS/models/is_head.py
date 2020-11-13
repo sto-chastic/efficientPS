@@ -33,7 +33,12 @@ class ROIFeatureExtraction(nn.Module):
 
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
-        feature_inputs = {1: p4, 2: p8, 3: p16, 4: p32}  #Size descending order
+        feature_inputs = {
+            1: p4,
+            2: p8,
+            3: p16,
+            4: p32,
+        }  # Size descending order
         # Main and bottom-up
         proposal_outputs = [
             self.rps_p32(p32),
@@ -114,7 +119,9 @@ class ROIFeatureExtraction(nn.Module):
             for new_level in range(1, 5):
 
                 def sort_anchors_by_level(sc_anchors, calculated_level_nums):
-                    return sc_anchors[calculated_level_nums.eq(new_level).nonzero()]
+                    return sc_anchors[
+                        calculated_level_nums.eq(new_level).nonzero()
+                    ]
 
                 anchors_per_level[new_level].append(
                     zip_apply_to_batches(
@@ -125,14 +132,16 @@ class ROIFeatureExtraction(nn.Module):
                 )
                 scores_per_level[new_level].append(
                     zip_apply_to_batches(
-                        scores[original_level], new_level_calculation[original_level], sort_anchors_by_level
+                        scores[original_level],
+                        new_level_calculation[original_level],
+                        sort_anchors_by_level,
                     )
                 )
 
         ### Extract features
 
         def prepare_boxes(anchors, level):
-            scale = 2*2**level
+            scale = 2 * 2 ** level
             vertices_anchors = convert_box_chw_to_vertices(anchors)
             vertices_anchors /= scale
             return torch.cat(
@@ -182,21 +191,25 @@ class ROIFeatureExtraction(nn.Module):
                     joined_anchors_per_level.index_select(0, nms_indices)
                 )
 
-                extractions = self.roi_align(
-                    feature_inputs[level][b].unsqueeze(0),
-                    prepare_boxes(joined_anchors_per_level, level),
-                ).squeeze_(),
+                extractions = (
+                    self.roi_align(
+                        feature_inputs[level][b].unsqueeze(0),
+                        prepare_boxes(joined_anchors_per_level, level),
+                    ).squeeze_(),
+                )
 
                 if len(extractions[0].shape) > 3:
-                    non_empty_extractions_ind = torch.unique(extractions[0].nonzero()[:, 0])
+                    non_empty_extractions_ind = torch.unique(
+                        extractions[0].nonzero()[:, 0]
+                    )
                     joined_extractions.append(
                         extractions[0][non_empty_extractions_ind]
                     )
-                    extracting_anchors.append(joined_anchors_per_level[non_empty_extractions_ind])
-                else:
-                    joined_extractions.append(
-                        extractions[0].unsqueeze(0)
+                    extracting_anchors.append(
+                        joined_anchors_per_level[non_empty_extractions_ind]
                     )
+                else:
+                    joined_extractions.append(extractions[0].unsqueeze(0))
                     extracting_anchors.append(joined_anchors_per_level)
 
             if len(joined_extractions) != 0:
@@ -282,9 +295,11 @@ class InstanceSegmentationHead(nn.Module):
             primitive_anchors,
         ) = self.roi_features(p32, p16, p8, p4)
         shape_ = extracted_features_.shape
-        extracted_features = extracted_features_.view(
-            shape_[0], shape_[1], -1
-        ).permute(0, 2, 1).contiguous()
+        extracted_features = (
+            extracted_features_.view(shape_[0], shape_[1], -1)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
         core = self.core_fc(extracted_features)
 
         classes = (
@@ -299,8 +314,12 @@ class InstanceSegmentationHead(nn.Module):
         bboxes = torch.zeros_like(bboxes_correction)
         proposed = proposed_bboxes.permute(0, 2, 1)
 
-        bboxes[:, :, :2, :] = proposed[:, :2, :] + bboxes_correction[:, :, :2, :]
-        bboxes[:, :, 2:, :] = proposed[:, 2:, :] * torch.exp(bboxes_correction[:, :, 2:, :])
+        bboxes[:, :, :2, :] = (
+            proposed[:, :2, :] + bboxes_correction[:, :, :2, :]
+        )
+        bboxes[:, :, 2:, :] = proposed[:, 2:, :] * torch.exp(
+            bboxes_correction[:, :, 2:, :]
+        )
 
         elements = torch.chunk(
             extracted_features_.permute(1, 0, 2, 3, 4), shape_[1]

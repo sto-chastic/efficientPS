@@ -3,6 +3,8 @@ from torch import Tensor, zeros, stack, sigmoid
 from torch.nn.functional import interpolate
 from typing import List, Tuple
 
+from ..dataset import *
+
 def filter_on_confidence(
     confidence: np.ndarray, logits: np.ndarray, thresh: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -39,10 +41,14 @@ def scale_pad_logits_with_bbox(
         tensor = tensor.unsqueeze(0).unsqueeze(0)
         x, y, w, h = bboxes[:, i]
         x, y, h, w = round(x), round(y), round(h), round(w),
+        if h*w == 0:
+            repadded_tensor = zeros(og_size[0], og_size[1])
+            out_tensor.append(repadded_tensor)
+            continue
         scaled_tensor = interpolate(
             tensor, (h, w)
         )  # pick your own interpolation method here
-        scaled_tensor = scaled_tensor.squeeze()
+        scaled_tensor = scaled_tensor.squeeze(0).squeeze(0)
 
         eff_x = round(x - w // 2)
         eff_y = round(y - h // 2)
@@ -66,7 +72,7 @@ def overlay_image_alpha(img, img_overlay, pos):
 
     # Exit if nothing to do
     if y1 >= y2 or x1 >= x2 or y1o >= y2o or x1o >= x2o:
-        return
+        return img
 
     # channels = img.shape[2]
 
@@ -102,6 +108,7 @@ def zero_out_nonbbox(logits: np.ndarray, bboxes: np.ndarray) -> Tensor:
         # do nothing with out of scope bboxes
         if h <= 0 and w <= 0:
             out_tensor.append(eff_tensor)
+            continue
         
         eff_tensor[eff_y : eff_y + h, eff_x : eff_x + w] = tensor[
             eff_y : eff_y + h, eff_x : eff_x + w
@@ -110,8 +117,22 @@ def zero_out_nonbbox(logits: np.ndarray, bboxes: np.ndarray) -> Tensor:
     return stack(out_tensor)
 
 
-def panoctic_fusion(MLa: Tensor, MLb: Tensor) -> Tensor:
-    return (sigmoid(MLa) + sigmoid(MLb)) * (MLa + MLa)
+def panoptic_fusion(MLa: Tensor, MLb: Tensor) -> Tensor:
+    return (sigmoid(MLa) + sigmoid(MLb)) * (MLa + MLb)
 
 def merge_fusion_semantic_things(array1: np.ndarray, array2: np.ndarray):
     return np.concatenate((array1, array2))
+
+def fill_canvas(intermediate_prediction, filtered_classes, n_stuff):
+    # Fill with things instances
+    mask = intermediate_prediction >= n_stuff
+    intermediate_prediction_things = mask * intermediate_prediction
+
+    canvas = np.take(filtered_classes, intermediate_prediction)
+    canvas = np.take(np.array(THINGS_STUFF_TO_ID), canvas)
+    # Fill with stuff
+    intermediate_prediction_stuff = ~mask * intermediate_prediction
+    intermediate_prediction_stuff = np.take(np.array(THINGS_STUFF_TO_ID), intermediate_prediction_stuff)
+
+    return canvas + intermediate_prediction_stuff
+     

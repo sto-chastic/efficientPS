@@ -1,4 +1,8 @@
-from .utils import *
+from torchvision.ops import nms
+import torch
+import cv2
+
+from .utilities import *
 from ..models import *
 from ..models.full import PSOutput, FullModel
 from ..dataset.dataset import DataSet
@@ -7,58 +11,70 @@ from .fake_data import *
 
 
 
-def panoptic_fusion_module(ps_output, confidence_thresh=0.5):
+def panoptic_fusion_module(ps_output, confidence_thresh=0.1, nms_threshold=0.5):
     n_things = len(THINGS)
     n_stuff = len(STUFF)
     og_size = (ps_output.semantic_logits.shape[2], ps_output.semantic_logits.shape[3])
     batches = ps_output.mask_logits.shape[0]
-    masked_logits, class_pred, confidence = ps_output.pick_mask_class_confidence()
+    masked_logits, class_pred, confidence, bboxes = ps_output.pick_mask_class_conf_bboxes()
 
-    masked_logits = ps_output.mask_logits[0,0,...].cpu().detach().numpy()
+    masked_logits_f = masked_logits.cpu().detach().numpy()
+    bboxes_f = bboxes.permute(0, 2, 1).cpu().detach().numpy()
+    class_pred_f = class_pred.unsqueeze(1).cpu().detach().numpy()
+    confidence_f = confidence.unsqueeze(1).cpu().detach().numpy()
+    for b in range(batches):
+        # masked_logitsc = ps_output.mask_logits[0,0,...].cpu().detach().numpy()
+        masked_logits = masked_logits_f[b]
 
-    # bboxes = create_uniform_bbox_pred(n_things, **bbox_data)
-    bboxes = ps_output.bboxes[0, ..., 0].squeeze().permute(1, 0).cpu().detach().numpy()
+        # bboxes = create_uniform_bbox_pred(n_things, **bbox_data)
+        bboxes = ps_output.bboxes[0, ..., 0].permute(1, 0).cpu().detach().numpy()
+        bboxes = bboxes_f[b]
 
-    # class_pred = create_class_pred(n_things)
-    class_pred = ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
-    class_pred = np.exp(class_pred)
+        # class_pred = create_class_pred(n_things)
+        class_predc = ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
+        class_pred = class_pred_f[b]
 
-    # confidence = create_confidence_levels(n_things)
-    confidence = ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
-    confidence = np.exp(confidence)
+        # confidence = create_confidence_levels(n_things)
+        confidencec = ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
+        confidence = confidence_f[b]
 
-    # filter all the masked logits that are less than the threshold
-    filtered_logits, filtered_conf, og_indices = filter_on_confidence(confidence, masked_logits, confidence_thresh)
-    # sort based on confidence levels
-    sorted_logits, sorted_conf, og_indices = sort_by_confidence(filtered_logits, filtered_conf, og_indices)
-    # scale the masked logits by bounding box and pad to original image size
-    MLa = scale_pad_logits_with_bbox(sorted_logits, og_size, bboxes)
+        # filter all the masked logits that are less than the threshold
+        filtered_logits, filtered_conf, og_indices = filter_on_confidence(confidence, masked_logits, confidence_thresh)
+        # sort based on confidence levels
+        sorted_logits, sorted_conf, og_indices = sort_by_confidence(filtered_logits, filtered_conf, og_indices)
+        # scale the masked logits by bounding box and pad to original image size
+        bboxes = bboxes[:,og_indices]
+        MLa = scale_pad_logits_with_bbox(sorted_logits, og_size, bboxes)
 
-    MLa
-    ################################################################################################
-    #### FILTER THE MLa WITH OVERLAP THRESH USING YOUR IOU FUNCTION to get a new MLa ####
-    #### MAKE SURE TO TRACK THE OG_INDICES WHEN YOU DO THE OVERLAP THRESHOLD FUNCTION ####
-    ################################################################################################
-    
+        nms_indices = nms(torch.tensor(bboxes).permute(1, 0), torch.tensor(filtered_conf), nms_threshold)
+        nms_indices = nms_indices.int().numpy()
+        bboxes = bboxes[:,nms_indices]
+        MLa = MLa[nms_indices]
 
-    # semantic segmentation route
-    semantic_logit = create_simple_logit(n_things+n_stuff, og_size[0], og_size[1])
-    semantic_prediction = logit_prediction(semantic_logit)
+        # semantic segmentation route
+        semantic_logit = ps_output.semantic_logits[b].cpu().detach().numpy()
+        semantic_prediction = logit_prediction(semantic_logit)
 
-    # assume the stuff is in the initial channels, and the things in the final ones
-    semantic_logit_things = semantic_logit[:n_things]
-    semantic_logit_stuff = semantic_logit[-n_stuff:]
+        # assume the stuff is in the initial channels, and the things in the final ones
+        semantic_logit_things = semantic_logit[:n_things+1]
+        semantic_logit_stuff = semantic_logit[-n_stuff:]
 
-    MLb = zero_out_nonbbox(semantic_logit_things[og_indices], bboxes[:, og_indices])
+        filtered_classes = class_pred[:,og_indices[nms_indices]][0]
+        MLb = zero_out_nonbbox(semantic_logit_things[filtered_classes], bboxes)
 
-    fusion = panoctic_fusion(MLa, MLb)
+        fusion = panoptic_fusion(MLa, MLb)
 
-    intermediate_logits = merge_fusion_semantic_things(semantic_logit_stuff, fusion.data.numpy())
+        intermediate_logits = merge_fusion_semantic_things(fusion.data.numpy(), semantic_logit_stuff)
 
-    intermediate_prediction = logit_prediction(intermediate_logits)
+        intermediate_prediction = logit_prediction(intermediate_logits)
+        filled_canvas = fill_canvas(intermediate_prediction, filtered_classes, n_stuff)
 
-    print(intermediate_prediction.shape)
-    print(intermediate_logits.shape)
+        if True:
+            import matplotlib.pyplot as plt
+            plt.imshow(filled_canvas)
+            plt.show()
+
+        return filled_canvas, intermediate_logits
 
 
 if __name__ == "__main__":

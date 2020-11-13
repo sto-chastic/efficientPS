@@ -111,3 +111,29 @@ THINGS_TO_THINGS_ID = {
     "person": 7,
     "rider": 8,
 }
+
+THINGS_STUFF_TO_ID = [
+    0, 26, 33, 28, 27, 31, 32, 24, 25, 7, 8, 11, 13, 12, 21, 22, 23, 17, 20, 19
+]
+THINGS_STUFF_TO_LABEL = {
+    "unlabeled": 0,
+    "car": 1,
+    "bicycle": 2,
+    "bus": 3,
+    "truck": 4,
+    "train": 5,
+    "motorcycle": 6,
+    "person": 7,
+    "rider": 8,
+    "road":9,
+    "sidewalk":10,
+    "building":11,
+    "fence":12,
+    "wall":13,
+    "vegetation":14,
+    "terrain":15,
+    "sky":16,
+    "pole":17,
+    "traffic sign":18,
+    "traffic ligth":19, 
+}

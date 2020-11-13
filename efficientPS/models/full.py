@@ -36,13 +36,14 @@ class PSOutput:
         return torch.exp(self.classes[:, 1:, :]) / torch.sum(torch.exp(self.classes[:, 1:, :]), 1)
 
     def get_confidence(self):
-        return torch.exp(self.classes[:, 1:, :])
+        return 1 - torch.exp(self.classes[:, 0, :])
 
-    def pick_mask_class_confidence(self):
+    def pick_mask_class_conf_bboxes(self):
         index = torch.argmax(self.get_classes(), 1)
         
         mask_logits = []
         confidences = []
+        bboxes = []
         for b in range(self.bboxes.shape[0]):
             mask_logits.append(
                 index_select2D(
@@ -50,18 +51,22 @@ class PSOutput:
                     index[b]
                 )
             )
-            confidences.append(
+            bboxes.append(
                 index_select2D(
-                    self.get_confidence()[b],
+                    self.bboxes[b].permute(1, 0, 2),
                     index[b]
                 )
             )
+            confidences.append(
+                self.get_confidence()[b]
+            )
 
         mask_logits = torch.stack(mask_logits)
+        bboxes = torch.stack(bboxes)
         conficence = torch.stack(confidences)
 
         classes = index + 1
-        return mask_logits, classes, conficence
+        return mask_logits, classes, conficence, bboxes
 
 
 

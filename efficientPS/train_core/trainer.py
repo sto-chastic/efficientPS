@@ -147,10 +147,11 @@ class Validator(Core):
         model.eval()
         losses = {}
         with torch.no_grad():
-            for loaded_data in self.loader:
+            for i, loaded_data in enumerate(tqdm(self.loader)):
                 image = loaded_data.get_image()
                 inference = model(image)
                 loss_fns = loss_class(loaded_data, inference)
+                loss = loss_fns.get_total_loss()
                 for key, loss_ele in loss_fns.losses_dict.items():
                     if key not in losses:
                         losses[key] = 0.0

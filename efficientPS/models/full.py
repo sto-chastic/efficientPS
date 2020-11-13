@@ -116,12 +116,7 @@ class FullModel(nn.Module):
     def save_model(self, path, name="EPSFull"):
         if not path.endswith("/"):
             path = "{}/".format(path)
-        self.save("{}{}.pt".format(path, name))
-
-    def load_model(self, path, name="EPSFull"):
-        if not path.endswith("/"):
-            path = "{}/".format(path)
-        self.load("{}{}.pt".format(path, name))
+        torch.save(self, "{}{}.pt".format(path, name))
 
 
 if __name__ == "__main__":

@@ -235,15 +235,13 @@ def train_ps(
         )
 
         if line_plotter:
-            for loss_type, loss in train_loss.items():
-                line_plotter.plot(loss_type, "validation", loss)
+            for loss_type, loss in validation_loss.items():
+                line_plotter.plot(loss_type, "validation", "validation", loss)
 
         if total_validation_loss <= current_best_loss:
             current_best_loss = total_validation_loss
             full_model.eval()
             full_model.save_model(save_dir)
-
-            optimizer.save_state(state_dir=save_dir)
 
 
 if __name__ == "__main__":

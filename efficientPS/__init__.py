@@ -1,6 +1,6 @@
-INPUT_DIR = "efficientPS/data/left_img/leftImg8bit/train"
-INPUT_VAL = "efficientPS/data/left_img/leftImg8bit/val"
-GT_DIR = "efficientPS/data/gt/gtFine/train"
-GT_VAL_DIR = "efficientPS/data/gt/gtFine/val"
+INPUT_DIR = "efficientPS/data/leftImg8bit_trainvaltest/leftImg8bit/train"
+INPUT_VAL = "efficientPS/data/leftImg8bit_trainvaltest/leftImg8bit/val"
+GT_DIR = "efficientPS/data/gtFine_trainvaltest/gtFine/train"
+GT_VAL_DIR = "efficientPS/data/gtFine_trainvaltest/gtFine/val"
 CITIES = ["aachen"]
 CITIES_VAL = ["frankfurt"]

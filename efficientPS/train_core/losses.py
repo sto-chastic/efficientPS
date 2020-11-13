@@ -35,11 +35,11 @@ class LossFunctions:
         # only sample 512 elements
 
     def ss_loss_max_pooling(self):
-        logits = self.inference.semantic_logits
-        (batch, num_classes, height, width) = logits.shape
+        raw_output = self.inference.semantic_logits
+        (batch, num_classes, height, width) = raw_output.shape
         nlll = nn.NLLLoss(reduction="none")
         loss = nlll(
-            logits, self.ground_truth.get_label_IDs().to(logits.device)
+            raw_output, self.ground_truth.get_label_IDs().to(raw_output.device)
         )
 
         values, ind = torch.sort(loss.view(batch, -1), 1)
@@ -423,15 +423,15 @@ class LossFunctions:
         selected_mask = index_select2D(
             mask_logits.permute(0, 3, 4, 2, 1).index_select(4, closest_iou_ind), gt_classes_ - 1
         )
-
+        criterion = nn.BCEWithLogitsLoss(reduction="none")
         if len(positive_matches_inf) > 0:
             loss = torch.cat((
                 loss,
-                self._cross_entropy(selected_mask, gt_masks)
+                criterion(selected_mask, gt_masks)
             ))
         else:
-            loss = self._cross_entropy(selected_mask, gt_masks)
-        return torch.sum(loss) / len(loss)
+            loss = criterion(selected_mask, gt_masks)
+        return torch.sum(loss) / len(gt_masks.nonzero())
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):
@@ -439,11 +439,6 @@ class LossFunctions:
         roi = RoIAlign((28, 28), spatial_scale=1, sampling_ratio=-1)
         extracted = roi(full_mask.unsqueeze(1), bb_and_classes.float())
         return extracted.ge(binarize_threshold)
-
-    @staticmethod
-    def _cross_entropy(inference, gt):
-        loss = gt * torch.log(inference) + (~gt) * torch.log(1 - inference)
-        return -loss
 
     def get_total_loss(self):
         self.losses_dict = {

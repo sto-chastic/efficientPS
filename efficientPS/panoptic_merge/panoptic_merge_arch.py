@@ -7,7 +7,6 @@ from ..models import *
 from ..models.full import PSOutput, FullModel
 from ..dataset.dataset import DataSet
 from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
-from .fake_data import *
 
 
 
@@ -52,7 +51,9 @@ def panoptic_fusion_module(ps_output, confidence_thresh=0.1, nms_threshold=0.5):
         MLa = MLa[nms_indices]
 
         # semantic segmentation route
-        semantic_logit = ps_output.semantic_logits[b].cpu().detach().numpy()
+        semantic_probs = torch.exp(ps_output.semantic_logits[b])
+
+        semantic_logit = torch.log(torch.exp(semantic_probs)/(1-torch.exp(semantic_probs))).cpu().detach().numpy()
         semantic_prediction = logit_prediction(semantic_logit)
 
         # assume the stuff is in the initial channels, and the things in the final ones

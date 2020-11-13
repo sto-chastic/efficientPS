@@ -276,7 +276,7 @@ class InstanceSegmentationHead(nn.Module):
             DepthSeparableConv2d(256, 256),
             DepthSeparableConv2d(256, 256),
             nn.ConvTranspose2d(256, 256, 2, stride=2, padding=0),
-            conv_1x1_bn_custom_act(256, num_things),
+            conv_1x1_bn_custom_act(256, num_things, None),
         ]
         return nn.Sequential(*convolutions)
 

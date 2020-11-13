@@ -356,8 +356,14 @@ class LossFunctions:
 
         return total_loss
 
+    @staticmethod
+    def _cross_entropy(inference, gt):
+        loss = gt * torch.log(inference) + (~gt) * torch.log(1 - inference)
+        return -loss
+
     def mask_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
+        criterion = nn.BCEWithLogitsLoss(reduction="none")
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
             return 0.0
@@ -385,7 +391,8 @@ class LossFunctions:
 
         gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device).float()
         objectness_stack = torch.stack(objectness)
-        # objectness_gt = objectness_stack.sum(0).ge(1)
+        
+        gt_bboxes_stack = convert_box_chw_to_vertices(gt_bboxes_stack)
 
         # Calculate with only the positiove matches (above threshold)
         positive_matches_gt = objectness_stack.nonzero()[:,0]
@@ -396,42 +403,46 @@ class LossFunctions:
 
         gt_bb_classes = torch.cat([gt_classes_.unsqueeze(1), gt_bboxes_], dim=1)
 
-        gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
+        gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes).float()
 
-
+        non_null_pixels = 0
         if len(positive_matches_inf) > 0:
             selected_mask = index_select2D(
                 mask_logits.permute(0, 3, 4, 2, 1).index_select(4,positive_matches_inf), gt_classes_ - 1
             )
 
-            loss = self._cross_entropy(selected_mask, gt_masks)
+            loss = criterion(selected_mask, gt_masks)
+            non_null_pixels += len(gt_masks.nonzero())
 
         # If no positive is found, then: "the anchor/anchors  with  
         # the  highest  Intersection-over-Union (IoU) overlap with 
         # a ground-truth box" - Faster-RCNN paper
         closest_iou = torch.stack(ious).argmax(dim=1)
         no_matching = (~torch.sum(objectness_stack, 1).gt(0)).nonzero().squeeze(1)
-        closest_iou_ind = closest_iou[no_matching]
 
-        gt_bboxes_ = gt_bboxes_stack[no_matching]
-        gt_classes_ = torch.tensor(gt_classes, device=iou.device)[no_matching]
+        if len(no_matching) > 0:
 
-        gt_bb_classes = torch.cat([gt_classes_.unsqueeze(1), gt_bboxes_], dim=1)
+            closest_iou_ind = closest_iou[no_matching]
 
-        gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes)
+            gt_bboxes_ = gt_bboxes_stack[no_matching]
+            gt_classes_ = torch.tensor(gt_classes, device=iou.device)[no_matching]
 
-        selected_mask = index_select2D(
-            mask_logits.permute(0, 3, 4, 2, 1).index_select(4, closest_iou_ind), gt_classes_ - 1
-        )
-        criterion = nn.BCEWithLogitsLoss(reduction="none")
-        if len(positive_matches_inf) > 0:
-            loss = torch.cat((
-                loss,
-                criterion(selected_mask, gt_masks)
-            ))
-        else:
-            loss = criterion(selected_mask, gt_masks)
-        return torch.sum(loss) / len(gt_masks.nonzero())
+            gt_bb_classes = torch.cat([gt_classes_.unsqueeze(1), gt_bboxes_], dim=1)
+
+            gt_masks = self._extract_mask_from_gt(gt_mask_seg, gt_bb_classes).float()
+
+            selected_mask = index_select2D(
+                mask_logits.permute(0, 3, 4, 2, 1).index_select(4, closest_iou_ind), gt_classes_ - 1
+            )
+            if len(positive_matches_inf) > 0:
+                loss = torch.cat((
+                    loss,
+                    criterion(selected_mask, gt_masks)
+                ))
+            else:
+                loss = criterion(selected_mask, gt_masks)
+
+        return torch.sum(loss) / (non_null_pixels + len(gt_masks.nonzero()) + 1e-3)
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):

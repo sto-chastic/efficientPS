@@ -92,7 +92,7 @@ class FullModel(nn.Module):
 
     def forward(self, inp):
         # Main and bottom-up
-        p32, p16, p8, p4 = self.fpn(inp)
+        p32, p16, p8, p4 = self.fpn(inp)      
         print("state: fpn")
         semantic_logits = self.ss_head(p32, p16, p8, p4)
         print("state: ss")

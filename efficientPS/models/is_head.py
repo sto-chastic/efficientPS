@@ -199,11 +199,6 @@ class ROIFeatureExtraction(nn.Module):
                     )
                     extracting_anchors.append(joined_anchors_per_level)
 
-                # if torch.sum(non_empty_extractions_ind.ge(len(extractions[0]))).item() > 0:
-                #     continue
-
-                torch.cat(joined_extractions, 0)
-
             if len(joined_extractions) != 0:
                 extractions_by_batch.append(torch.cat(joined_extractions, 0))
             else:

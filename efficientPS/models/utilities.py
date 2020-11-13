@@ -22,12 +22,12 @@ def convert_box_vertices_to_cwh(bbox):
                 bbox[1][1],
             ]
         )
-
+    bbox = bbox.float()
     vt = torch.zeros_like(bbox)
     vt[..., 2] = bbox[..., 2] - bbox[..., 0]
     vt[..., 3] = bbox[..., 3] - bbox[..., 1]
-    vt[..., 0] = bbox[..., 0] + vt[..., 2]
-    vt[..., 1] = bbox[..., 1] - vt[..., 3]
+    vt[..., 0] = bbox[..., 0] + vt[..., 2]/2
+    vt[..., 1] = bbox[..., 1] + vt[..., 3]/2
 
     return vt
 

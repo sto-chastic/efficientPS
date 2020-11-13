@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch
 from ..dataset.dataset import DataSet
 from ..models.full import PSOutput
-
+from ..panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 
 class Core:
     def __init__(
@@ -98,12 +98,8 @@ class Trainer(Core):
                 optimizer.step_scheduler(loss_fns)
                 optimizer.zero_grad()
                 print("W Update : Loss={}".format(total_loss))
-                for key, loss_ele in loss_fns.losses_dict.items():
-                    if isinstance(loss_fns.losses_dict[key], torch.Tensor):
-                        losses[key] += loss_fns.losses_dict[key].item()
-                    else:
-                        losses[key] += loss_fns.losses_dict[key]
-                    print("{}: {}".format(key, loss_ele))
+                self.print_loss(loss_fns.losses_dict)
+                panoptic_fusion_module(inference)
             
             elif i == len(self.loader):
                 div = i - (i // self.minibatch_size)*self.minibatch_size
@@ -114,8 +110,22 @@ class Trainer(Core):
                 optimizer.step_scheduler(loss_fns)
                 optimizer.zero_grad()
                 print("W Update : Loss={}".format(total_loss))
+                panoptic_fusion_module(inference, probe_name="./probe.png")
 
-        return losses
+            if self.visdom is not None:
+                for loss_type, loss in loss_fns.losses_dict.items():
+                    if isinstance(loss, torch.Tensor):
+                        loss =  loss.item()
+                    self.visdom.plot(loss_type, "training", "training", loss)
+
+        for key, loss_ele in losses.items():
+            losses[key] /= i
+        return losses, inference
+
+    @staticmethod
+    def print_loss(losses_dict):
+        for key, loss_ele in losses_dict.items():
+            print("{}: {}".format(key, loss_ele))
 
 
 class Validator(Core):
@@ -141,13 +151,17 @@ class Validator(Core):
                 image = loaded_data.get_image()
                 inference = model(image)
                 loss_fns = loss_class(loaded_data, inference)
-                loss = loss_fns.get_total_loss()
-
-                for key, _ in loss.items():
+                for key, loss_ele in loss_fns.losses_dict.items():
                     if key not in losses:
                         losses[key] = 0.0
-                    losses[key] += loss[key].item()
-        return losses
+                    if isinstance(loss_ele, torch.Tensor):
+                        losses[key] += loss_ele.item()
+                    else:
+                        losses[key] += loss_ele
+
+        for key, loss_ele in losses.items():
+            losses[key] /= i
+        return losses, inference
 
 
 if __name__ == "__main__":

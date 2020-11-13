@@ -10,7 +10,7 @@ from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
 
 
 
-def panoptic_fusion_module(ps_output, confidence_thresh=0.1, nms_threshold=0.5):
+def panoptic_fusion_module(ps_output, confidence_thresh=0.1, nms_threshold=0.5, probe_name=None):
     n_things = len(THINGS)
     n_stuff = len(STUFF)
     og_size = (ps_output.semantic_logits.shape[2], ps_output.semantic_logits.shape[3])
@@ -70,10 +70,9 @@ def panoptic_fusion_module(ps_output, confidence_thresh=0.1, nms_threshold=0.5):
         intermediate_prediction = logit_prediction(intermediate_logits)
         filled_canvas = fill_canvas(intermediate_prediction, filtered_classes, n_stuff)
 
-        if True:
+        if probe_name is not None:
             import matplotlib.pyplot as plt
-            plt.imshow(filled_canvas)
-            plt.show()
+            plt.imsave(probe_name, filled_canvas, dpi=300)
 
         return filled_canvas, intermediate_logits
 

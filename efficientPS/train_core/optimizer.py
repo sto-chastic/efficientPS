@@ -14,13 +14,13 @@ class Optimizer:
         self.filename = "optimizer.pt"
 
         def select_optimizer(op_type, parameters, lr):
-            if op_type == "adam":
+            if op_type == "adamw":
                 return AdamW(parameters, lr=lr)
             elif op_type == "sgd":
                 return SGD(parameters, lr=lr)
 
         def select_scheduler(op_type, optimizer):
-            if op_type == "adam":
+            if op_type == "adamw":
                 return torch.optim.lr_scheduler.ReduceLROnPlateau(
                     optimizer,
                     "min",
@@ -48,7 +48,10 @@ class Optimizer:
         [opt.step() for _, opt in self.optimizers.items()]
 
     def step_scheduler(self, loss):
-        [sch.step(loss.losses_dict[key]) for key, sch in self.schedulers.items()]
+        [
+            sch.step(loss.losses_dict[key])
+            for key, sch in self.schedulers.items()
+        ]
 
     def load_state(self, state_dir) -> None:
         if not state_dir.endswith("/"):

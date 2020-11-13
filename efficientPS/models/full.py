@@ -33,33 +33,29 @@ class PSOutput:
         self.primitive_anchors = primitive_anchors
 
     def get_classes(self):
-        return torch.exp(self.classes[:, 1:, :]) / torch.sum(torch.exp(self.classes[:, 1:, :]), 1)
+        return torch.exp(self.classes[:, 1:, :]) / torch.sum(
+            torch.exp(self.classes[:, 1:, :]), 1
+        )
 
     def get_confidence(self):
         return 1 - torch.exp(self.classes[:, 0, :])
 
     def pick_mask_class_conf_bboxes(self):
         index = torch.argmax(self.get_classes(), 1)
-        
+
         mask_logits = []
         confidences = []
         bboxes = []
         for b in range(self.bboxes.shape[0]):
             mask_logits.append(
                 index_select2D(
-                    self.mask_logits[b].permute(2, 3, 1, 0),
-                    index[b]
+                    self.mask_logits[b].permute(2, 3, 1, 0), index[b]
                 )
             )
             bboxes.append(
-                index_select2D(
-                    self.bboxes[b].permute(1, 0, 2),
-                    index[b]
-                )
+                index_select2D(self.bboxes[b].permute(1, 0, 2), index[b])
             )
-            confidences.append(
-                self.get_confidence()[b]
-            )
+            confidences.append(self.get_confidence()[b])
 
         mask_logits = torch.stack(mask_logits)
         bboxes = torch.stack(bboxes)
@@ -67,7 +63,6 @@ class PSOutput:
 
         classes = index + 1
         return mask_logits, classes, conficence, bboxes
-
 
 
 class FullModel(nn.Module):
@@ -93,9 +88,7 @@ class FullModel(nn.Module):
     def forward(self, inp):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
-        print("state: fpn")
         semantic_logits = self.ss_head(p32, p16, p8, p4)
-        print("state: ss")
         (
             classes,
             bboxes,
@@ -103,7 +96,6 @@ class FullModel(nn.Module):
             proposed_bboxes,
             primitive_anchors,
         ) = self.is_head(p32, p16, p8, p4)
-        print("state: is")
         return PSOutput(
             semantic_logits,
             classes,

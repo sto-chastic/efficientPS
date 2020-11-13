@@ -477,9 +477,9 @@ class LossFunctions:
             else:
                 loss = criterion(selected_mask, gt_masks)
 
-        return torch.sum(loss) / (
+        return torch.clamp(torch.sum(loss) / (
             non_null_pixels + len(gt_masks.nonzero()) + 1e-3
-        )
+        ), 0, 100)
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):

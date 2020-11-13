@@ -14,13 +14,13 @@ class Optimizer:
         self.filename = "optimizer.pt"
 
         def select_optimizer(op_type, parameters, lr):
-            if op_type == "adam":
+            if op_type == "adamw":
                 return AdamW(parameters, lr=lr)
             elif op_type == "sgd":
                 return SGD(parameters, lr=lr)
 
         def select_scheduler(op_type, optimizer):
-            if op_type == "adam":
+            if op_type == "adamw":
                 return torch.optim.lr_scheduler.ReduceLROnPlateau(
                     optimizer,
                     "min",

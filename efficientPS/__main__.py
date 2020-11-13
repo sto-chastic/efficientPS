@@ -167,9 +167,13 @@ def train_ps(
 
     # This format allows to split the model and train parameters
     # with different optimizers. For now, full model is trained
+
+    # NOTE: I selected to use AdamW as it is a robust optimizer
+    # and requires less tuning than the proposed SGD (no warmup)
+    # see https://www.fast.ai/2018/07/02/adam-weight-decay/
     optimizer_config = {
         # unique_key: [opt type, parameters, learning rate]
-        "full_model": ["adam", full_model.parameters(), 0.07]
+        "full_model": ["adamw", full_model.parameters(), 0.07]
     }
 
     optimizer = Optimizer(optimizer_config)

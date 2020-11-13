@@ -88,9 +88,7 @@ class FullModel(nn.Module):
     def forward(self, inp):
         # Main and bottom-up
         p32, p16, p8, p4 = self.fpn(inp)
-        print("state: fpn")
         semantic_logits = self.ss_head(p32, p16, p8, p4)
-        print("state: ss")
         (
             classes,
             bboxes,
@@ -98,7 +96,6 @@ class FullModel(nn.Module):
             proposed_bboxes,
             primitive_anchors,
         ) = self.is_head(p32, p16, p8, p4)
-        print("state: is")
         return PSOutput(
             semantic_logits,
             classes,

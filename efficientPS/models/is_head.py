@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,14 +34,63 @@ class ROIFeatureExtraction(nn.Module):
 
         self.nms_threshold = nms_threshold
 
-    def checkpointer(threshold):
+    @staticmethod
+    def checkpointed_nms(threshold, splits=100):
         def custom_forward(*inputs):
-            nms_out = nms(
-                inputs[0],
-                inputs[1],
-                iou_threshold=self.nms_threshold,
+            div = math.ceil(inputs[0].shape[0] / splits)
+
+            collected = []
+            scores = []
+            for i in range(splits):
+                input_data = inputs[0][i*div:(i+1)*div]
+                input_scores = inputs[1][i*div:(i+1)*div]
+                nms_indices = nms(
+                    input_data,
+                    input_scores,
+                    iou_threshold=threshold,
+                )
+                collected.append(input_data.index_select(0, nms_indices))
+                scores.append(input_scores.index_select(0, nms_indices))
+            collected = torch.cat(collected, 0)
+            scores = torch.cat(scores, 0)
+
+            nms_indices = nms(
+                collected,
+                scores,
+                iou_threshold=threshold,
             )
-            return nms_out
+
+            return collected.index_select(0, nms_indices)
+        return custom_forward
+
+
+    @staticmethod
+    def checkpointed_nms(threshold, splits=100):
+        def custom_forward(*inputs):
+            div = math.ceil(inputs[0].shape[0] / splits)
+
+            collected = []
+            scores = []
+            for i in range(splits):
+                input_data = inputs[0][i*div:(i+1)*div]
+                input_scores = inputs[1][i*div:(i+1)*div]
+                nms_indices = nms(
+                    input_data,
+                    input_scores,
+                    iou_threshold=threshold,
+                )
+                collected.append(input_data.index_select(0, nms_indices))
+                scores.append(input_scores.index_select(0, nms_indices))
+            collected = torch.cat(collected, 0)
+            scores = torch.cat(scores, 0)
+
+            nms_indices = nms(
+                collected,
+                scores,
+                iou_threshold=threshold,
+            )
+
+            return collected.index_select(0, nms_indices)
         return custom_forward
 
     def forward(self, p32, p16, p8, p4):
@@ -153,7 +204,7 @@ class ROIFeatureExtraction(nn.Module):
 
         def prepare_boxes(anchors, level):
             scale = 2 * 2 ** level
-            vertices_anchors = convert_box_chw_to_vertices(anchors)
+            vertices_anchors = anchors
             vertices_anchors /= scale
             return torch.cat(
                 (
@@ -192,42 +243,38 @@ class ROIFeatureExtraction(nn.Module):
                     joined_scores_per_level_l, 0
                 )
 
-
-                nms_indices = checkpoint.checkpoint(
-                    checkpointer(), 
+                joined_anchors_per_level = checkpoint.checkpoint(
+                    self.checkpointed_nms(self.nms_threshold), 
                     convert_box_chw_to_vertices(joined_anchors_per_level),
                     joined_scores_per_level
                 )
-                # nms_indices = nms(
-                #     convert_box_chw_to_vertices(joined_anchors_per_level),
-                #     joined_scores_per_level,
-                #     iou_threshold=self.nms_threshold,
+
+                extractions = checkpoint.checkpoint(
+                    self.roi_align,
+                    feature_inputs[level][b].unsqueeze(0),
+                    prepare_boxes(joined_anchors_per_level, level)
+                ).squeeze_()
+
+                # extractions = (
+                #     self.roi_align(
+                #         feature_inputs[level][b].unsqueeze(0),
+                #         prepare_boxes(joined_anchors_per_level, level),
+                #     ).squeeze_(),
                 # )
 
-                joined_anchors_per_level = (
-                    joined_anchors_per_level.index_select(0, nms_indices)
-                )
-
-                extractions = (
-                    self.roi_align(
-                        feature_inputs[level][b].unsqueeze(0),
-                        prepare_boxes(joined_anchors_per_level, level),
-                    ).squeeze_(),
-                )
-
-                if len(extractions[0].shape) > 3:
-                    non_empty_extractions_ind = torch.unique(
-                        extractions[0].nonzero()[:, 0]
-                    )
-                    joined_extractions.append(
-                        extractions[0][non_empty_extractions_ind]
-                    )
-                    extracting_anchors.append(
-                        joined_anchors_per_level[non_empty_extractions_ind]
-                    )
-                else:
-                    joined_extractions.append(extractions[0].unsqueeze(0))
-                    extracting_anchors.append(joined_anchors_per_level)
+                # if len(extractions[0].shape) > 3:
+                #     non_empty_extractions_ind = torch.unique(
+                #         extractions[0].nonzero()[:, 0]
+                #     )
+                #     joined_extractions.append(
+                #         extractions[0][non_empty_extractions_ind]
+                #     )
+                #     extracting_anchors.append(
+                #         joined_anchors_per_level[non_empty_extractions_ind]
+                #     )
+                # else:
+                joined_extractions.append(extractions)
+                extracting_anchors.append(joined_anchors_per_level)
 
             if len(joined_extractions) != 0:
                 extractions_by_batch.append(torch.cat(joined_extractions, 0))
@@ -345,7 +392,11 @@ class InstanceSegmentationHead(nn.Module):
         def get_mask(element):
             return self.mask(element.squeeze_(0))
 
-        masks = [get_mask(x).unsqueeze(1) for x in elements]
+        masks = [
+            checkpoint.checkpoint(
+                get_mask, x
+            ).unsqueeze(1) for x in elements
+        ]
 
         return (
             classes,
@@ -362,10 +413,10 @@ if __name__ == "__main__":
     ).cuda()
 
     ish = InstanceSegmentationHead(8, anchors, 0.3).cuda()
-    classes, bboxes, mask = ish(
+    output = ish(
         torch.rand(1, 256, 32, 64).cuda(),
         torch.rand(1, 256, 64, 128).cuda(),
         torch.rand(1, 256, 128, 256).cuda(),
         torch.rand(1, 256, 256, 512).cuda(),
     )
-    print("classes, bboxes, mask", classes.shape, bboxes.shape, mask.shape)
+    print("output", output)

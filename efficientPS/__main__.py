@@ -26,7 +26,7 @@ from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
     help="Root directory of the images. Where the cities folders are",
 )
 @click.option(
-    "-i",
+    "-iv",
     "--input-val",
     default=INPUT_VAL,
     show_default=True,
@@ -42,7 +42,7 @@ from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
     help="Root directory of the ground truth. Where the cities folders are",
 )
 @click.option(
-    "-gt",
+    "-gtv",
     "--ground-truth-val-dir",
     default=GT_VAL_DIR,
     show_default=True,
@@ -58,7 +58,7 @@ from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
     help="The cities list",
 )
 @click.option(
-    "-c",
+    "-cv",
     "--cities_validate",
     default=CITIES_VAL,
     show_default=True,
@@ -127,7 +127,7 @@ from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 )
 @click.option(
     "--nms-threshold",
-    default=0.4,
+    default=0.2,
     show_default=True,
     type=click.FloatRange(min=0.1, max=0.99),
     help="NMS threshold",

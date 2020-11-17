@@ -93,8 +93,8 @@ class DepthSeparableConv2d(nn.Module):
     @staticmethod
     def checkpointer(function):
         def custom_forward(*inputs):
-            inputs = function(inputs[0])
-            return inputs
+            outputs = function(inputs[0])
+            return outputs
         return custom_forward
 
     def forward(self, x):

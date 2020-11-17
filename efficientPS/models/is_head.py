@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as checkpoint
 
 from torchvision.ops import RoIAlign, nms
 
@@ -30,6 +31,16 @@ class ROIFeatureExtraction(nn.Module):
         self.roi_align = RoIAlign((14, 14), spatial_scale=1, sampling_ratio=-1)
 
         self.nms_threshold = nms_threshold
+
+    def checkpointer(threshold):
+        def custom_forward(*inputs):
+            nms_out = nms(
+                inputs[0],
+                inputs[1],
+                iou_threshold=self.nms_threshold,
+            )
+            return nms_out
+        return custom_forward
 
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
@@ -181,11 +192,17 @@ class ROIFeatureExtraction(nn.Module):
                     joined_scores_per_level_l, 0
                 )
 
-                nms_indices = nms(
+
+                nms_indices = checkpoint.checkpoint(
+                    checkpointer(), 
                     convert_box_chw_to_vertices(joined_anchors_per_level),
-                    joined_scores_per_level,
-                    iou_threshold=self.nms_threshold,
+                    joined_scores_per_level
                 )
+                # nms_indices = nms(
+                #     convert_box_chw_to_vertices(joined_anchors_per_level),
+                #     joined_scores_per_level,
+                #     iou_threshold=self.nms_threshold,
+                # )
 
                 joined_anchors_per_level = (
                     joined_anchors_per_level.index_select(0, nms_indices)

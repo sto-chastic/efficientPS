@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.ops import nms
+import torch.utils.checkpoint as checkpoint
 
 from . import *
 
@@ -89,7 +90,20 @@ class DepthSeparableConv2d(nn.Module):
             in_channels, out_channels, kernel_size=1, bias=bias
         )
 
+    @staticmethod
+    def checkpointer(function):
+        def custom_forward(*inputs):
+            inputs = function(inputs[0])
+            return inputs
+        return custom_forward
+
     def forward(self, x):
+        x = checkpoint.checkpoint(
+            self.checkpointer(self.forward_), x
+        )
+        return x
+
+    def forward_(self, x):
         x = self.conv(x)
         x = self.depth_conv(x)
         return x
@@ -339,4 +353,4 @@ if __name__ == "__main__":
     # print("out", out.shape)
     rpn = RegionProposalNetwork(ANCHORS, 32)
     out = rpn(torch.rand(3, 256, 32, 64))
-    print("out", out.shape)
+    print(out.anchors[0].shape)

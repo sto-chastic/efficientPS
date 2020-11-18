@@ -127,7 +127,7 @@ from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 )
 @click.option(
     "--nms-threshold",
-    default=0.2,
+    default=0.5,
     show_default=True,
     type=click.FloatRange(min=0.1, max=0.99),
     help="NMS threshold",

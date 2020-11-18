@@ -369,7 +369,7 @@ class InstanceSegmentationHead(nn.Module):
         classes = (
             self.fc_classes(core)
             .view(shape_[0], self.num_things + 1, 1, shape_[1])
-            .squeeze_(2)
+            .squeeze(2)
         )
 
         bboxes_correction = self.fc_bb(core).view(
@@ -390,7 +390,7 @@ class InstanceSegmentationHead(nn.Module):
         )
 
         def get_mask(element):
-            return self.mask(element.squeeze_(0))
+            return self.mask(element.squeeze(0))
 
         masks = [
             checkpoint.checkpoint(

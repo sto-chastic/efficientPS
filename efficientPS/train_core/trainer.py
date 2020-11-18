@@ -75,42 +75,39 @@ class Trainer(Core):
 
         optimizer.zero_grad()
         for i, loaded_data in enumerate(tqdm(self.loader)):
-            total_loss = 0.0
-            image = loaded_data.get_image()
+            with torch.autograd.detect_anomaly():
+                image = loaded_data.get_image()
+                image.requires_grad = True
 
-            inference = model(image)
-            loss_fns = loss_class(loaded_data, inference)
-            loss = loss_fns.get_total_loss()
+                inference = model(image)
+                loss_fns = loss_class(loaded_data, inference)
+                loss = loss_fns.get_total_loss()
 
-            total_loss += loss
+                print(torch.cuda.memory_summary(torch.device("cuda")))
 
-            for key, loss_ele in loss_fns.losses_dict.items():
-                if key not in losses:
-                    losses[key] = 0.0
-                if isinstance(loss_ele, torch.Tensor):
-                    losses[key] += loss_ele.item()
-                else:
-                    losses[key] += loss_ele
+                if i % self.minibatch_size == 0 and i > 0:
+                    loss = loss/self.minibatch_size
+                    loss.backward()
 
-            if i % self.minibatch_size == 0 and i > 0:
-                total_loss /= self.minibatch_size
-                total_loss.backward()
+                elif i == len(self.loader):
+                    div = i - (i // self.minibatch_size) * self.minibatch_size
+                    loss = loss/div
+                    loss.backward()
 
                 optimizer.step()
                 optimizer.step_scheduler(loss_fns)
                 optimizer.zero_grad()
-                print("W Update : Loss={}".format(total_loss))
-                self.print_loss(loss_fns.losses_dict)
 
-            elif i == len(self.loader):
-                div = i - (i // self.minibatch_size) * self.minibatch_size
-                total_loss /= div
-                total_loss.backward()
+                for key, loss_ele in loss_fns.losses_dict.items():
+                    if key not in losses:
+                        losses[key] = 0.0
+                    if isinstance(loss_ele, torch.Tensor):
+                        losses[key] += loss_ele.item()
+                    else:
+                        losses[key] += loss_ele
 
-                optimizer.step()
-                optimizer.step_scheduler(loss_fns)
-                optimizer.zero_grad()
-                print("W Update : Loss={}".format(total_loss))
+            print("W Update : Loss={}".format(loss))
+            self.print_loss(loss_fns.losses_dict)
 
             if self.visdom is not None:
                 for loss_type, loss in loss_fns.losses_dict.items():

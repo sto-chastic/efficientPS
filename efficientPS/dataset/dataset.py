@@ -87,8 +87,8 @@ class PSSamples:
             height = int(image_dims[1] * scale)
             dim = (width, height)
             image = cv2.resize(image, dim)
-        torch_image = torch.tensor(image, device=self.device)
-        return torch_image.permute(2, 0, 1).unsqueeze(0).float()
+        torch_image = torch.tensor(image, device=self.device) / 255.0
+        return torch_image.permute(2, 0, 1).unsqueeze(0)
 
 
 class DataSet(torch.utils.data.Dataset):

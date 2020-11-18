@@ -146,16 +146,16 @@ class MBConvBlock(nn.Module):
         x = inputs
         if self._block_args.expand_ratio != 1:
             x = self._expand_conv(inputs)
-            x = self._bn0(x)
+            # x = self._bn0(x)
             x = self._swish(x)
 
         x = self._depthwise_conv(x)
-        x = self._bn1(x)
+        # x = self._bn1(x)
         x = self._swish(x)
 
         # Pointwise Convolution
         x = self._project_conv(x)
-        x = self._bn2(x)
+        # x = self._bn2(x)
 
         # Skip connection and drop connect
         input_filters, output_filters = (

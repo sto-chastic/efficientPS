@@ -343,7 +343,8 @@ class EfficientNet(nn.Module):
             prev_x = x
 
         # Head
-        x = self._swish(self._bn1(self._conv_head(x)))
+        # x = self._swish(self._bn1(self._conv_head(x)))
+        x = self._swish(self._conv_head(x))
         endpoints["reduction_{}".format(len(endpoints) + 1)] = x
 
         return endpoints

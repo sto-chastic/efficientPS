@@ -5,3 +5,7 @@ Dockerfile
 
 #pychache
 *__pycache__*
+
+# images
+data/*
+efficientPS/data/*

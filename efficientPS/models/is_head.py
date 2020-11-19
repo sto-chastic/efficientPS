@@ -389,19 +389,24 @@ class InstanceSegmentationHead(nn.Module):
             extracted_features_.permute(1, 0, 2, 3, 4), shape_[1]
         )
 
-        def get_mask(element):
-            return self.mask(element.squeeze(0))
+        def get_masks(elements_):
+            def get_mask(element):
+                return self.mask(element.squeeze(0))
 
-        masks = [
-            checkpoint.checkpoint(
-                get_mask, x
-            ).unsqueeze(1) for x in elements
-        ]
+            masks_ = [
+                get_mask(x).unsqueeze(1) for x in elements_
+            ]
+
+            return torch.cat(masks_, 1)           
+
+        masks = checkpoint.checkpoint(
+            get_masks, elements
+        )
 
         return (
             classes,
             bboxes,
-            torch.cat(masks, 1),
+            masks,
             proposed_bboxes,
             primitive_anchors,
         )

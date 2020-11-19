@@ -17,6 +17,7 @@ from .utilities import (
     iou_function,
     index_select2D,
     id_to_things_id_expanded,
+    id_to_things_stuff_id
 )
 
 
@@ -41,9 +42,12 @@ class LossFunctions:
     def ss_loss_max_pooling(self):
         raw_output = self.inference.semantic_logits
         (batch, num_classes, height, width) = raw_output.shape
+
+        formated_labels = id_to_things_stuff_id(self.ground_truth.get_label_IDs())
+
         nlll = nn.NLLLoss(reduction="none")
         loss = nlll(
-            raw_output, self.ground_truth.get_label_IDs().to(raw_output.device)
+            raw_output, formated_labels.unsqueeze(0)
         )
 
         values, ind = torch.sort(loss.view(batch, -1), 1)
@@ -55,8 +59,8 @@ class LossFunctions:
         mask = (
             loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1)).float()
             * 4
-            / height
-            / width
+            / (height + 1e-3)
+            / (width + 1e-3)
         )
 
         return torch.sum(loss * mask) / batch
@@ -65,7 +69,7 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return 0.0
+            return torch.tensor(0.0, device=self.inference.mask_logits.device)
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
@@ -134,7 +138,7 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return 0.0
+            return torch.tensor(0.0, device=self.inference.mask_logits.device)
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
@@ -246,7 +250,7 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return 0.0
+            return torch.tensor(0.0, device=self.inference.mask_logits.device)
 
         objectness = []
         ious = []
@@ -288,7 +292,7 @@ class LossFunctions:
             )  # According to the paper, only sample 512 elements
 
             total_loss = (
-                torch.sum(loss[samples]) / self.second_stage_num_samples
+                torch.sum(loss[samples]) / (self.second_stage_num_samples  + 1e-3)
             )
         else:
             total_loss = torch.sum(loss) / (loss.shape[0] + 1e-3)
@@ -299,7 +303,7 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return 0.0
+            return torch.tensor(0.0, device=self.inference.mask_logits.device)
 
         proposed_bboxes = self.inference.proposed_bboxes
         inference_bboxes = self.inference.bboxes
@@ -367,7 +371,7 @@ class LossFunctions:
             )  # According to the paper, only sample 512 elements
 
             total_loss = (
-                torch.sum(loss[samples]) / self.second_stage_num_samples
+                torch.sum(loss[samples]) / (self.second_stage_num_samples  + 1e-3)
             )
         else:
             total_loss = torch.sum(loss) / (loss.shape[0] + 1e-3)
@@ -384,7 +388,7 @@ class LossFunctions:
         criterion = nn.BCEWithLogitsLoss(reduction="none")
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return 0.0
+            return torch.tensor(0.0, device=self.inference.mask_logits.device)
 
         mask_logits = self.inference.mask_logits
         proposed_bboxes = self.inference.proposed_bboxes
@@ -491,14 +495,14 @@ class LossFunctions:
     def get_total_loss(self):
         self.losses_dict = {
             "ss_loss_max_pooling": self.ss_loss_max_pooling(),
-            "roi_proposal_objectness": self.roi_proposal_objectness(),
-            "roi_proposal_regression": self.roi_proposal_regression(),
-            "regression_loss": self.regression_loss(),
-            "mask_loss": self.mask_loss(),
+            # "roi_proposal_objectness": self.roi_proposal_objectness(),
+            # "roi_proposal_regression": self.roi_proposal_regression(),
+            # "regression_loss": self.regression_loss(),
+            # "mask_loss": self.mask_loss(),
         }
         loss = 0
         for v in self.losses_dict.values():
-            loss += v
+            loss = loss + v
 
         self.losses_dict["full_model"] = loss
         return loss

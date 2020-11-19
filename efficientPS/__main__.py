@@ -173,7 +173,7 @@ def train_ps(
     # see https://www.fast.ai/2018/07/02/adam-weight-decay/
     optimizer_config = {
         # unique_key: [opt type, parameters, learning rate]
-        "full_model": ["adamw", full_model.parameters(), 0.07]
+        "full_model": ["adamw", full_model.parameters(), 0.001]
     }
 
     optimizer = Optimizer(optimizer_config)

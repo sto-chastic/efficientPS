@@ -92,22 +92,30 @@ class FullModel(nn.Module):
         )
         # semantic_logits = self.ss_head(p32, p16, p8, p4)
 
-        (
-            classes,
-            bboxes,
-            mask_logits,
-            proposed_bboxes,
-            primitive_anchors,
-        ) = self.is_head(p32, p16, p8, p4)
+        # (
+        #     classes,
+        #     bboxes,
+        #     mask_logits,
+        #     proposed_bboxes,
+        #     primitive_anchors,
+        # ) = self.is_head(p32, p16, p8, p4)
 
         return PSOutput(
             semantic_logits,
-            classes,
-            bboxes,
-            mask_logits,
-            proposed_bboxes,
-            primitive_anchors,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
+        # return PSOutput(
+        #     semantic_logits,
+        #     classes,
+        #     bboxes,
+        #     mask_logits,
+        #     proposed_bboxes,
+        #     primitive_anchors,
+        # )
 
     @staticmethod
     def _initialize_weights(m):

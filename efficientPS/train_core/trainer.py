@@ -5,7 +5,46 @@ import torch
 from ..dataset.dataset import DataSet
 from ..models.full import PSOutput
 from ..panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
 
+
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+    
+    Usage: Plug this function in Trainer class after loss.backwards() as 
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads= []
+    layers = []
+    for n, p in named_parameters:
+        if(p.requires_grad) and ("bias" not in n) and ("bn" not in n) and ("se" not in n) and ("fpn.en._fc.weight" not in n):
+            if p.grad is not None:
+                layers.append(n)
+                ave_grads.append(p.grad.abs().mean())
+                max_grads.append(p.grad.abs().max())
+            else:
+                layers.append(n)
+                ave_grads.append(0)
+                max_grads.append(0)
+                print(n, ": nograd")
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(left=0, right=len(ave_grads))
+    # plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+    plt.ylim(bottom = -0.001, top=4) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    plt.show()
 
 class Core:
     def __init__(
@@ -83,17 +122,17 @@ class Trainer(Core):
                 loss_fns = loss_class(loaded_data, inference)
                 loss = loss_fns.get_total_loss()
 
-                print(torch.cuda.memory_summary(torch.device("cuda")))
+                # print(torch.cuda.memory_summary(torch.device("cuda")))
 
                 if i % self.minibatch_size == 0 and i > 0:
                     loss = loss/self.minibatch_size
-                    loss.backward()
 
                 elif i == len(self.loader):
                     div = i - (i // self.minibatch_size) * self.minibatch_size
                     loss = loss/div
-                    loss.backward()
 
+                loss.backward()
+                # plot_grad_flow(model.named_parameters())
                 optimizer.step()
                 optimizer.step_scheduler(loss_fns)
                 optimizer.zero_grad()

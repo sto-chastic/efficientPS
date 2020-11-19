@@ -327,7 +327,8 @@ class EfficientNet(nn.Module):
         endpoints = dict()
 
         # Stem
-        x = self._swish(self._bn0(self._conv_stem(inputs)))
+        # x = self._swish(self._bn0(self._conv_stem(inputs)))
+        x = self._swish(self._conv_stem(inputs))
         prev_x = x
 
         # Blocks

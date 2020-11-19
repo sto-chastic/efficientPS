@@ -4,6 +4,7 @@ import json
 
 import cv2
 import random
+import numpy as np
 
 from .utilities import polygons_to_bboxes
 from . import *

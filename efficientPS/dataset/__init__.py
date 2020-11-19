@@ -113,7 +113,9 @@ THINGS_TO_THINGS_ID = {
 }
 
 THINGS_STUFF_TO_ID = [
+    # Empty
     0,
+    # Things
     26,
     33,
     28,
@@ -122,6 +124,7 @@ THINGS_STUFF_TO_ID = [
     32,
     24,
     25,
+    # Stuff
     7,
     8,
     11,
@@ -134,6 +137,7 @@ THINGS_STUFF_TO_ID = [
     20,
     19,
 ]
+
 THINGS_STUFF_TO_LABEL = {
     "unlabeled": 0,
     "car": 1,

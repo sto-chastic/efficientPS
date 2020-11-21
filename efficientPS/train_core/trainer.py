@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 
+torch.backends.cudnn.benachmark = True
 
 def plot_grad_flow(named_parameters):
     '''Plots the gradients flowing through different layers in the net during training.
@@ -114,39 +115,42 @@ class Trainer(Core):
 
         optimizer.zero_grad()
         for i, loaded_data in enumerate(tqdm(self.loader)):
-            with torch.autograd.detect_anomaly():
-                image = loaded_data.get_image()
-                image.requires_grad = True
+            if len(loaded_data.get_bboxes()) == 0:
+                continue
+            # with torch.autograd.detect_anomaly():
+            image = loaded_data.get_image()
+            image.requires_grad = True
 
-                inference = model(image)
-                loss_fns = loss_class(loaded_data, inference)
-                loss = loss_fns.get_total_loss()
+            inference = model(image)
+            print("Inference finished, loss stage")
+            loss_fns = loss_class(loaded_data, inference)
+            loss = loss_fns.get_total_loss()
 
-                # print(torch.cuda.memory_summary(torch.device("cuda")))
+            if i % self.minibatch_size == 0 and i > 0:
+                loss = loss/self.minibatch_size
 
-                if i % self.minibatch_size == 0 and i > 0:
-                    loss = loss/self.minibatch_size
+            elif i == len(self.loader):
+                div = i - (i // self.minibatch_size) * self.minibatch_size
+                loss = loss/div
 
-                elif i == len(self.loader):
-                    div = i - (i // self.minibatch_size) * self.minibatch_size
-                    loss = loss/div
-
-                loss.backward()
-                # plot_grad_flow(model.named_parameters())
-                optimizer.step()
-                optimizer.step_scheduler(loss_fns)
-                optimizer.zero_grad()
-
-                for key, loss_ele in loss_fns.losses_dict.items():
-                    if key not in losses:
-                        losses[key] = 0.0
-                    if isinstance(loss_ele, torch.Tensor):
-                        losses[key] += loss_ele.item()
-                    else:
-                        losses[key] += loss_ele
+            print("loss stage finished, backward")
+            loss.backward()
+            # plot_grad_flow(model.named_parameters())
+            print("back finished, step")
+            optimizer.step()
+            optimizer.step_scheduler(loss_fns)
+            optimizer.zero_grad()
+            print("step finished")
+            for key, loss_ele in loss_fns.losses_dict.items():
+                if key not in losses:
+                    losses[key] = 0.0
+                if isinstance(loss_ele, torch.Tensor):
+                    losses[key] += loss_ele.item()
+                else:
+                    losses[key] += loss_ele
 
             print("W Update : Loss={}".format(loss))
-            self.print_loss(loss_fns.losses_dict)
+            # self.print_loss(loss_fns.losses_dict)
 
             if self.visdom is not None:
                 for loss_type, loss in loss_fns.losses_dict.items():

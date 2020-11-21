@@ -40,32 +40,41 @@ class LossFunctions:
         # only sample 512 elements
 
     def ss_loss_max_pooling(self):
+        print("ss_loss")
         raw_output = self.inference.semantic_logits
         (batch, num_classes, height, width) = raw_output.shape
-
+        print("ss_loss:", batch, num_classes, height, width)
         formated_labels = id_to_things_stuff_id(self.ground_truth.get_label_IDs())
 
+        print("ss_loss1")
         nlll = nn.NLLLoss(reduction="none")
         loss = nlll(
             raw_output, formated_labels.unsqueeze(0)
         )
-
+        print("ss_loss2")
         values, ind = torch.sort(loss.view(batch, -1), 1)
 
         middle = int(values.shape[1] / 2)
         top_quartile = int(middle + middle / 2)
 
         top_quartile_values = values[:, top_quartile]
+        print("ss_loss3")
         mask = (
             loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1)).float()
             * 4
             / (height + 1e-3)
             / (width + 1e-3)
         )
+        error = loss * mask
 
+        zeros = torch.zeros_like(mask)
+        zeros.requires_grad = False
+        error = torch.where(mask > 0, error, zeros)
+        print("done ss loss")
         return torch.sum(loss * mask) / batch
 
     def roi_proposal_objectness(self):
+        print("ROI objectness")
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
@@ -135,6 +144,7 @@ class LossFunctions:
         return -partial_objectness_loss
 
     def roi_proposal_regression(self):
+        print("ROI regression")
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
@@ -300,6 +310,7 @@ class LossFunctions:
         return total_loss
 
     def regression_loss(self):
+        print("Regression loss")
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
@@ -384,6 +395,7 @@ class LossFunctions:
         return -loss
 
     def mask_loss(self):
+        print("Mask loss start")
         # TODO(David): This assumes batchsize 1, extend later if required
         criterion = nn.BCEWithLogitsLoss(reduction="none")
         gt_bb = self.ground_truth.get_bboxes()
@@ -495,11 +507,12 @@ class LossFunctions:
     def get_total_loss(self):
         self.losses_dict = {
             "ss_loss_max_pooling": self.ss_loss_max_pooling(),
-            # "roi_proposal_objectness": self.roi_proposal_objectness(),
-            # "roi_proposal_regression": self.roi_proposal_regression(),
-            # "regression_loss": self.regression_loss(),
-            # "mask_loss": self.mask_loss(),
+            "roi_proposal_objectness": self.roi_proposal_objectness(),
+            "roi_proposal_regression": self.roi_proposal_regression(),
+            "regression_loss": self.regression_loss(),
+            "mask_loss": self.mask_loss(),
         }
+        print("Done loss ")
         loss = 0
         for v in self.losses_dict.values():
             loss = loss + v

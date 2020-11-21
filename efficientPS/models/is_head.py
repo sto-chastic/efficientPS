@@ -41,39 +41,9 @@ class ROIFeatureExtraction(nn.Module):
 
             collected = []
             scores = []
-            for i in range(splits):
-                input_data = inputs[0][i*div:(i+1)*div]
-                input_scores = inputs[1][i*div:(i+1)*div]
-                nms_indices = nms(
-                    input_data,
-                    input_scores,
-                    iou_threshold=threshold,
-                )
-                collected.append(input_data.index_select(0, nms_indices))
-                scores.append(input_scores.index_select(0, nms_indices))
-            collected = torch.cat(collected, 0)
-            scores = torch.cat(scores, 0)
-
-            nms_indices = nms(
-                collected,
-                scores,
-                iou_threshold=threshold,
-            )
-
-            return collected.index_select(0, nms_indices)
-        return custom_forward
-
-
-    @staticmethod
-    def checkpointed_nms(threshold, splits=100):
-        def custom_forward(*inputs):
-            div = math.ceil(inputs[0].shape[0] / splits)
-
-            collected = []
-            scores = []
-            for i in range(splits):
-                input_data = inputs[0][i*div:(i+1)*div]
-                input_scores = inputs[1][i*div:(i+1)*div]
+            for i in range(div):
+                input_data = inputs[0][i*splits:(i+1)*splits]
+                input_scores = inputs[1][i*splits:(i+1)*splits]
                 nms_indices = nms(
                     input_data,
                     input_scores,
@@ -243,6 +213,7 @@ class ROIFeatureExtraction(nn.Module):
                     joined_scores_per_level_l, 0
                 )
 
+                print("nms {} boxes".format(len(joined_anchors_per_level)))
                 joined_anchors_per_level = checkpoint.checkpoint(
                     self.checkpointed_nms(self.nms_threshold), 
                     convert_box_chw_to_vertices(joined_anchors_per_level),
@@ -253,26 +224,8 @@ class ROIFeatureExtraction(nn.Module):
                     self.roi_align,
                     feature_inputs[level][b].unsqueeze(0),
                     prepare_boxes(joined_anchors_per_level, level)
-                ).squeeze_()
+                )
 
-                # extractions = (
-                #     self.roi_align(
-                #         feature_inputs[level][b].unsqueeze(0),
-                #         prepare_boxes(joined_anchors_per_level, level),
-                #     ).squeeze_(),
-                # )
-
-                # if len(extractions[0].shape) > 3:
-                #     non_empty_extractions_ind = torch.unique(
-                #         extractions[0].nonzero()[:, 0]
-                #     )
-                #     joined_extractions.append(
-                #         extractions[0][non_empty_extractions_ind]
-                #     )
-                #     extracting_anchors.append(
-                #         joined_anchors_per_level[non_empty_extractions_ind]
-                #     )
-                # else:
                 joined_extractions.append(extractions)
                 extracting_anchors.append(joined_anchors_per_level)
 
@@ -385,28 +338,36 @@ class InstanceSegmentationHead(nn.Module):
             bboxes_correction[:, :, 2:, :]
         )
 
-        elements = torch.chunk(
-            extracted_features_.permute(1, 0, 2, 3, 4), shape_[1]
-        )
 
-        def get_masks(elements_):
-            def get_mask(element):
-                return self.mask(element.squeeze(0))
+        def masks_by_subbatches(inputs, splits=200):
+            div = math.ceil(inputs.shape[0] / splits)
 
-            masks_ = [
-                get_mask(x).unsqueeze(1) for x in elements_
-            ]
+            collected = []
+            for i in range(div):
+                elements = inputs[i*splits:(i+1)*splits]
+                print("SUBMasks num: {}".format(len(elements)))
+                collected.append(
+                    checkpoint.checkpoint(
+                        self.mask,
+                        elements
+                    )
+                )
 
-            return torch.cat(masks_, 1)           
+            return torch.cat(collected, 0)
 
-        masks = checkpoint.checkpoint(
-            get_masks, elements
-        )
+        masks = []
+        for b in range(shape_[0]):
+            elements = extracted_features_[b]
+            print("Masks num: {}".format(len(elements)))
+            masks.append(
+                    masks_by_subbatches(elements)
+            )
+        masks = torch.stack(masks)
 
         return (
-            classes,
+            classes[:75],
             bboxes,
-            masks,
+            masks[:75],
             proposed_bboxes,
             primitive_anchors,
         )

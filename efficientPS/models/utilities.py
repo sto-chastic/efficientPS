@@ -97,24 +97,16 @@ class DepthSeparableConv2d(nn.Module):
             return outputs
         return custom_forward
 
-    def forward(self, x):
+    def forward_(self, x):
         x = checkpoint.checkpoint(
-            self.checkpointer(self.forward_), x
+            self.checkpointer(self.forward), x
         )
         return x
 
-    def forward_(self, x):
+    def forward(self, x):
         x = self.conv(x)
         x = self.depth_conv(x)
         return x
-
-
-# def conv_3x3_bn(in_channels, out_channels, stride, activation=nn.LeakyReLU):
-#     return nn.Sequential(
-#         nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False),
-#         nn.BatchNorm2d(out_channels),
-#         activation(inplace=True)
-#     )
 
 
 def conv_1x1_bn(in_channels, out_channels):

@@ -134,6 +134,7 @@ class Trainer(Core):
                 loss = loss/div
 
             print("loss stage finished, backward")
+            # image.detach()
             loss.backward()
             # plot_grad_flow(model.named_parameters())
             print("back finished, step")
@@ -188,6 +189,8 @@ class Validator(Core):
         losses = {}
         with torch.no_grad():
             for i, loaded_data in enumerate(tqdm(self.loader)):
+                if len(loaded_data.get_bboxes()) == 0:
+                    continue
                 image = loaded_data.get_image()
                 inference = model(image)
                 loss_fns = loss_class(loaded_data, inference)

@@ -55,7 +55,7 @@ class PSSamples:
 
                 if (
                     self.fraction_box_inside(potential_box["bbox"], self.crop)
-                    > 0.7
+                    > 0.7 # 70% of the box required inside
                 ):
                     filtered_bboxes.append(potential_box)
 

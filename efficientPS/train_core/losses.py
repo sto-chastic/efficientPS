@@ -40,45 +40,33 @@ class LossFunctions:
         # only sample 512 elements
 
     def ss_loss_max_pooling(self):
-        print("ss_loss")
         raw_output = self.inference.semantic_logits
         (batch, num_classes, height, width) = raw_output.shape
-        print("ss_loss:", batch, num_classes, height, width)
         formated_labels = id_to_things_stuff_id(self.ground_truth.get_label_IDs())
 
-        print("ss_loss1")
         nlll = nn.NLLLoss(reduction="none")
         loss = nlll(
             raw_output, formated_labels.unsqueeze(0)
         )
-        print("ss_loss2")
         values, ind = torch.sort(loss.view(batch, -1), 1)
 
         middle = int(values.shape[1] / 2)
         top_quartile = int(middle + middle / 2)
 
         top_quartile_values = values[:, top_quartile]
-        print("ss_loss3")
         mask = (
             loss.ge(top_quartile_values.unsqueeze(-1).unsqueeze(-1)).float()
             * 4
             / (height + 1e-3)
             / (width + 1e-3)
         )
-        error = loss * mask
-
-        zeros = torch.zeros_like(mask)
-        zeros.requires_grad = False
-        error = torch.where(mask > 0, error, zeros)
-        print("done ss loss")
         return torch.sum(loss * mask) / batch
 
     def roi_proposal_objectness(self):
-        print("ROI objectness")
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return torch.tensor(0.0, device=self.inference.mask_logits.device)
+            return 0.0
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
@@ -87,6 +75,7 @@ class LossFunctions:
         for i in range(4):
             objectness_true = []
             objectness_false = []
+            ious = []
             level_primitives = self.inference.primitive_anchors[i]
             primitive_bb = level_primitives.anchors
             primitive_obj = level_primitives.objectness
@@ -96,7 +85,6 @@ class LossFunctions:
                     primitive_bb[0] * level_primitives.scale
                 )
                 iou = iou_function(edges_bb, bb["bbox"])
-
                 gt_objectness_true = iou.ge(self.first_stage_objectness_thr)
 
                 objectness_true.append(gt_objectness_true)
@@ -120,20 +108,28 @@ class LossFunctions:
             objectness_gt_f_ind = objectness_stack_false.nonzero()[:, 1]
 
             negative_loss = self._bb_partial_proposal_objectness(
-                primitive_obj[0][objectness_gt_f_ind]
+                1-primitive_obj[0][objectness_gt_f_ind]
             )
 
             loss = torch.cat([positive_loss, negative_loss])
 
             if loss.shape[0] > num_samples_per_stage:
-                samples = random.sample(
-                    range(loss.shape[0]), num_samples_per_stage
+                # Sample half and half due to class imbalance
+                num_t_samples = min(positive_loss.shape[0], num_samples_per_stage //2)
+                samples_t = random.sample(
+                    range(positive_loss.shape[0]), num_t_samples
+                )  # According to the paper, only sample 256 elements
+                num_f_samples = min(negative_loss.shape[0], num_samples_per_stage //2)
+                samples_f = random.sample(
+                    range(negative_loss.shape[0]), num_f_samples
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples])
-                number_samples += num_samples_per_stage
+                total_loss = total_loss + torch.sum(positive_loss[samples_t])
+                total_loss = total_loss + torch.sum(negative_loss[samples_f])
+                number_samples += len(samples_t)
+                number_samples += len(samples_f)
             else:
-                total_loss += torch.sum(loss)
+                total_loss = total_loss + torch.sum(loss)
                 number_samples += loss.shape[0]
 
         return total_loss / (number_samples + 1e-3)
@@ -144,11 +140,12 @@ class LossFunctions:
         return -partial_objectness_loss
 
     def roi_proposal_regression(self):
-        print("ROI regression")
+        """Calculate the ROI proposal loss .
+        """
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return torch.tensor(0.0, device=self.inference.mask_logits.device)
+            return 0.0
         # How many samples, positive and negative, per extraction level
         num_samples_per_stage = self.first_stage_num_samples // 4
 
@@ -172,9 +169,6 @@ class LossFunctions:
 
                 ious.append(iou)
                 positive_matches.append(positive_match)
-
-            if len(gt_bboxesl) == 0:
-                continue
 
             gt_bboxes_stack = torch.stack(gt_bboxesl).to(iou.device).float()
             positives_stack = torch.stack(positive_matches)
@@ -222,10 +216,10 @@ class LossFunctions:
                     range(loss.shape[0]), num_samples_per_stage
                 )  # According to the paper, only sample 256 elements
 
-                total_loss += torch.sum(loss[samples])
+                total_loss = total_loss + torch.sum(loss[samples])
                 number_samples += num_samples_per_stage
             else:
-                total_loss += torch.sum(loss)
+                total_loss = total_loss + torch.sum(loss)
                 number_samples += loss.shape[0]
 
         return total_loss / (number_samples + 1e-3)
@@ -236,6 +230,8 @@ class LossFunctions:
         gt_bboxes,
         transformations,
     ):
+        """Compute the Box regression .
+        """
         smooth = 1e-3
 
         def bb_parametrization(anchors):
@@ -260,8 +256,7 @@ class LossFunctions:
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return torch.tensor(0.0, device=self.inference.mask_logits.device)
-
+            return 0.0
         objectness = []
         ious = []
         proposed_bboxes = self.inference.proposed_bboxes
@@ -279,54 +274,48 @@ class LossFunctions:
             ious.append(iou)
             classesl.append(THINGS_TO_THINGS_ID[bb["label"]])
 
+        # Selects the closest GT box for every output
         classes = torch.tensor(classesl).to(iou.device)
         closest_iou = torch.stack(ious).argmax(dim=0)
         selected_class = classes.index_select(0, closest_iou)
+
         objectness_stack = torch.stack(objectness)
         objectness_gt = objectness_stack.sum(0).ge(1)
 
+        # If it is not a positive match, then the output should be 0
         gt_class = (
             selected_class * objectness_gt
         )  # Class 0 is empty bbox, background
 
-        one_hot_targets = nn.functional.one_hot(
-            gt_class, num_classes=len(THINGS) + 1
-        ).permute(1, 0)
-
         nlll = nn.NLLLoss(reduction="none")
 
-        loss = nlll(inference_classes.permute(0, 1, 2), gt_class.unsqueeze_(0))
-        if loss.shape[0] > self.second_stage_num_samples:
+        loss = nlll(inference_classes, gt_class.unsqueeze_(0))
+        if loss.shape[1] > self.second_stage_num_samples:
             samples = random.sample(
-                range(loss.shape[0]), self.second_stage_num_samples
+                range(loss.shape[1]), self.second_stage_num_samples
             )  # According to the paper, only sample 512 elements
 
             total_loss = (
-                torch.sum(loss[samples]) / (self.second_stage_num_samples  + 1e-3)
+                torch.sum(loss[:, samples]) / (self.second_stage_num_samples  + 1e-3)
             )
         else:
-            total_loss = torch.sum(loss) / (loss.shape[0] + 1e-3)
+            total_loss = torch.sum(loss) / (loss.shape[1] + 1e-3)
 
         return total_loss
 
     def regression_loss(self):
-        print("Regression loss")
         # TODO(David): This assumes batchsize 1, extend later if required
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return torch.tensor(0.0, device=self.inference.mask_logits.device)
+            return 0.0
 
         proposed_bboxes = self.inference.proposed_bboxes
         inference_bboxes = self.inference.bboxes
-        inference_classes = torch.exp(self.inference.classes)
-
-        renorm_inference_classes = inference_classes[:, 1:, :] / torch.sum(
-            inference_classes[:, 1:, :], dim=1
-        )
+        inference_classes = self.inference.get_classes()
 
         selected_inference_bb = index_select2D(
             inference_bboxes.permute(0, 2, 1, 3),
-            renorm_inference_classes.argmax(dim=1)[0],
+            inference_classes.argmax(dim=1)[0],
         ).permute(1, 0, 2)
 
         objectness = []
@@ -395,12 +384,11 @@ class LossFunctions:
         return -loss
 
     def mask_loss(self):
-        print("Mask loss start")
         # TODO(David): This assumes batchsize 1, extend later if required
         criterion = nn.BCEWithLogitsLoss(reduction="none")
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
-            return torch.tensor(0.0, device=self.inference.mask_logits.device)
+            return 0.0
 
         mask_logits = self.inference.mask_logits
         proposed_bboxes = self.inference.proposed_bboxes
@@ -506,9 +494,10 @@ class LossFunctions:
 
     def get_total_loss(self):
         self.losses_dict = {
-            "ss_loss_max_pooling": self.ss_loss_max_pooling(),
-            "roi_proposal_objectness": self.roi_proposal_objectness(),
-            "roi_proposal_regression": self.roi_proposal_regression(),
+            "ss_loss_max_pooling": self.ss_loss_max_pooling(), #
+            "roi_proposal_objectness": self.roi_proposal_objectness(), #
+            "roi_proposal_regression": self.roi_proposal_regression(), #
+            "classification_loss": self.classification_loss(), #
             "regression_loss": self.regression_loss(),
             "mask_loss": self.mask_loss(),
         }

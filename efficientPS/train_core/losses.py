@@ -385,7 +385,6 @@ class LossFunctions:
 
     def mask_loss(self):
         # TODO(David): This assumes batchsize 1, extend later if required
-        criterion = nn.BCEWithLogitsLoss(reduction="none")
         gt_bb = self.ground_truth.get_bboxes()
         if len(gt_bb) == 0:
             return 0.0
@@ -434,12 +433,13 @@ class LossFunctions:
         ).float()
 
         non_null_pixels = 0
+        criterion = nn.BCEWithLogitsLoss(reduction="none")
         if len(positive_matches_inf) > 0:
             selected_mask = index_select2D(
                 mask_logits.permute(0, 3, 4, 2, 1).index_select(
                     4, positive_matches_inf
                 ),
-                gt_classes_ - 1,
+                gt_classes_ - 1, # we don't count 0 class
             )
 
             loss = criterion(selected_mask, gt_masks)
@@ -454,9 +454,6 @@ class LossFunctions:
         )
 
         if len(no_matching) > 0:
-
-            closest_iou_ind = closest_iou[no_matching]
-
             gt_bboxes_ = gt_bboxes_stack[no_matching]
             gt_classes_ = torch.tensor(gt_classes, device=iou.device)[
                 no_matching
@@ -470,6 +467,8 @@ class LossFunctions:
                 gt_mask_seg, gt_bb_classes
             ).float()
 
+            closest_iou_ind = closest_iou[no_matching]
+
             selected_mask = index_select2D(
                 mask_logits.permute(0, 3, 4, 2, 1).index_select(
                     4, closest_iou_ind
@@ -480,10 +479,9 @@ class LossFunctions:
                 loss = torch.cat((loss, criterion(selected_mask, gt_masks)))
             else:
                 loss = criterion(selected_mask, gt_masks)
+            non_null_pixels = non_null_pixels + len(gt_masks.nonzero()
 
-        return torch.clamp(torch.sum(loss) / (
-            non_null_pixels + len(gt_masks.nonzero()) + 1e-3
-        ), 0, 100)
+        return torch.sum(loss) / (non_null_pixels + 1e-3)
 
     @staticmethod
     def _extract_mask_from_gt(full_mask, bb_and_classes):

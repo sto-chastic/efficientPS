@@ -12,7 +12,6 @@ from .dataset import *
 from .models import *
 from .train_core.optimizer import Optimizer
 from .train_core.trainer import Trainer, Validator
-from .train_core.losses import LossFunctions
 from .panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
 
 

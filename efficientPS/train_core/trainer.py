@@ -119,7 +119,7 @@ class Trainer(Core):
                 continue
             # with torch.autograd.detect_anomaly():
             image = loaded_data.get_image()
-            image.requires_grad = True
+            # image.requires_grad = True
 
             inference = model(image)
             print("Inference finished, loss stage")

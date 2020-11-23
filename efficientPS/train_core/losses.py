@@ -479,7 +479,7 @@ class LossFunctions:
                 loss = torch.cat((loss, criterion(selected_mask, gt_masks)))
             else:
                 loss = criterion(selected_mask, gt_masks)
-            non_null_pixels = non_null_pixels + len(gt_masks.nonzero()
+            non_null_pixels = non_null_pixels + len(gt_masks.nonzero())
 
         return torch.sum(loss) / (non_null_pixels + 1e-3)
 

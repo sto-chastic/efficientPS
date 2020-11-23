@@ -111,10 +111,11 @@ class Trainer(Core):
         optimizer,
     ):
         model.train()
-        losses = {}
+        total_losses = {}
 
         optimizer.zero_grad()
         for i, loaded_data in enumerate(tqdm(self.loader)):
+            losses = {}
             if len(loaded_data.get_bboxes()) == 0:
                 continue
             # with torch.autograd.detect_anomaly():
@@ -128,40 +129,46 @@ class Trainer(Core):
 
             if i % self.minibatch_size == 0 and i > 0:
                 loss = loss/self.minibatch_size
-
+                loss.backward()
+                # plot_grad_flow(model.named_parameters())
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
             elif i == len(self.loader):
                 div = i - (i // self.minibatch_size) * self.minibatch_size
                 loss = loss/div
 
-            print("loss stage finished, backward")
-            # image.detach()
-            loss.backward()
-            # plot_grad_flow(model.named_parameters())
-            print("back finished, step")
-            optimizer.step()
-            optimizer.step_scheduler(loss_fns)
-            optimizer.zero_grad()
-            print("step finished")
+                loss.backward()
+                # plot_grad_flow(model.named_parameters())
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
+
             for key, loss_ele in loss_fns.losses_dict.items():
+                if key not in total_losses:
+                    total_losses[key] = 0.0
                 if key not in losses:
                     losses[key] = 0.0
                 if isinstance(loss_ele, torch.Tensor):
+                    total_losses[key] += loss_ele.item()
                     losses[key] += loss_ele.item()
                 else:
+                    total_losses[key] += loss_ele
                     losses[key] += loss_ele
 
             print("W Update : Loss={}".format(loss))
             # self.print_loss(loss_fns.losses_dict)
 
-            if self.visdom is not None:
-                for loss_type, loss in loss_fns.losses_dict.items():
-                    if isinstance(loss, torch.Tensor):
-                        loss = loss.item()
-                    self.visdom.plot(loss_type, "training", "training", loss)
+            if i % self.minibatch_size == 0 and i > 0:
+                if self.visdom is not None:
+                    for loss_type, loss in losses.items():
+                        if isinstance(loss, torch.Tensor):
+                            loss = loss.item()
+                        self.visdom.plot(loss_type, "training", "training", loss/self.minibatch_size)
 
-        for key, loss_ele in losses.items():
-            losses[key] /= i
-        return losses, inference
+        for key, loss_ele in total_losses.items():
+            total_losses[key] /= i
+        return total_losses, inference
 
     @staticmethod
     def print_loss(losses_dict):

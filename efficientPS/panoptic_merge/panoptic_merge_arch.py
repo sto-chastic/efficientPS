@@ -10,7 +10,7 @@ from ..dataset import LABELS_TO_ID, STUFF, THINGS, THINGS_TO_THINGS_ID
 
 
 def panoptic_fusion_module(
-    ps_output, confidence_thresh=0.1, nms_threshold=0.5, probe_name=None
+    ps_output, confidence_thresh=0.7, nms_threshold=0.5, probe_name=None
 ):
     """
     if probe_name, it saves the panoptic fusion image
@@ -34,25 +34,15 @@ def panoptic_fusion_module(
     class_pred_f = class_pred.unsqueeze(1).cpu().detach().numpy()
     confidence_f = confidence.unsqueeze(1).cpu().detach().numpy()
     for b in range(batches):
-        # masked_logitsc = ps_output.mask_logits[0,0,...].cpu().detach().numpy()
         masked_logits = masked_logits_f[b]
 
-        # bboxes = create_uniform_bbox_pred(n_things, **bbox_data)
         bboxes = (
             ps_output.bboxes[0, ..., 0].permute(1, 0).cpu().detach().numpy()
         )
         bboxes = bboxes_f[b]
 
-        # class_pred = create_class_pred(n_things)
-        class_predc = (
-            ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
-        )
         class_pred = class_pred_f[b]
 
-        # confidence = create_confidence_levels(n_things)
-        confidencec = (
-            ps_output.classes[0, :8, 0].unsqueeze(0).cpu().detach().numpy()
-        )
         confidence = confidence_f[b]
 
         # filter all the masked logits that are less than the threshold
@@ -77,24 +67,17 @@ def panoptic_fusion_module(
         MLa = MLa[nms_indices]
 
         # semantic segmentation route
-        semantic_probs = torch.exp(ps_output.semantic_logits[b])
+        semantic_logits = ps_output.semantic_logits[b]
 
-        semantic_logit = (
-            torch.log(
-                torch.exp(semantic_probs) / (1 - torch.exp(semantic_probs))
-            )
-            .cpu()
-            .detach()
-            .numpy()
-        )
+        semantic_logit = semantic_logits.cpu().detach().numpy()
         semantic_prediction = logit_prediction(semantic_logit)
 
         # assume the stuff is in the initial channels, and the things in the final ones
-        semantic_logit_things = semantic_logit[: n_things + 1]
-        semantic_logit_stuff = semantic_logit[-n_stuff:]
+        semantic_logit_things = semantic_logit[1:n_things+1]
+        semantic_logit_stuff = semantic_logit[[0, *range(20-n_stuff, 20, 1)]]
 
         filtered_classes = class_pred[:, og_indices[nms_indices]][0]
-        MLb = zero_out_nonbbox(semantic_logit_things[filtered_classes], bboxes)
+        MLb = zero_out_nonbbox(semantic_logit_things[filtered_classes-1], bboxes)
 
         fusion = panoptic_fusion(MLa, MLb)
 
@@ -102,7 +85,7 @@ def panoptic_fusion_module(
             fusion.data.numpy(), semantic_logit_stuff
         )
 
-        intermediate_prediction = logit_prediction(intermediate_logits)
+        intermediate_prediction = logit_prediction(intermediate_logits) #check this, is probably not right
         filled_canvas = fill_canvas(
             intermediate_prediction, filtered_classes, n_stuff
         )

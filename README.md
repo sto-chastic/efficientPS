@@ -2,6 +2,10 @@
 
 Code provided for the paper [EfficientPS: Efficient Panoptic Segmentation](https://arxiv.org/pdf/2004.02307.pdf) by Rohit et al.
 
+My explanation of the paper can be found in the following presention [here](https://docs.google.com/presentation/d/1eRmAbOkiaD6nZz-zaJMASPL7F_pegBrerSufvLhw0_Q/edit?usp=sharing)
+
+The network is designed to use Gradient Checkpointing due to its large size. As explained [here](https://github.com/prigoyal/pytorch_memonger/blob/master/tutorial/Checkpointing_for_PyTorch_models.ipynb) it works by dividing the model or parts of the model in various segments and executing the segments without taping them in the forward pass i.e. their taping is delayed until the backward pass. This results in not storing the entire model in memory but only segments, reducing the memory usage at the expense of computation speed during training.
+
 Current preliminary state.
 
 ## Setup

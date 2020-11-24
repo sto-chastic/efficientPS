@@ -120,10 +120,12 @@ class Trainer(Core):
                 continue
             # with torch.autograd.detect_anomaly():
             image = loaded_data.get_image()
-            # image.requires_grad = True
-
             inference = model(image)
-            print("Inference finished, loss stage")
+
+            output_image, intermediate_logits = panoptic_fusion_module(
+                inference, probe_name="./probe.png"
+            )
+
             loss_fns = loss_class(loaded_data, inference)
             loss = loss_fns.get_total_loss()
 

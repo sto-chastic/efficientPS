@@ -177,8 +177,8 @@ def train_ps(
 
     optimizer = Optimizer(optimizer_config)
     if load:
-        optimizer.load_state(state_dir=save_dir)
-        full_model.load_model(path=save_dir)
+        # optimizer.load_state(state_dir=save_dir)
+        full_model = torch.load(load)
 
     line_plotter = None
     if traning_progress_plot:

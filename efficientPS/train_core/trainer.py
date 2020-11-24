@@ -114,6 +114,7 @@ class Trainer(Core):
         total_losses = {}
 
         optimizer.zero_grad()
+        loss = 0.0
         for i, loaded_data in enumerate(tqdm(self.loader)):
             losses = {}
             if len(loaded_data.get_bboxes()) == 0:
@@ -127,11 +128,12 @@ class Trainer(Core):
             )
 
             loss_fns = loss_class(loaded_data, inference)
-            loss = loss_fns.get_total_loss()
+            loss = loss + loss_fns.get_total_loss()
 
             if i % self.minibatch_size == 0 and i > 0:
                 loss = loss/self.minibatch_size
                 loss.backward()
+                loss = 0.0
                 # plot_grad_flow(model.named_parameters())
                 optimizer.step()
                 optimizer.step_scheduler(loss_fns)
@@ -141,6 +143,7 @@ class Trainer(Core):
                 loss = loss/div
 
                 loss.backward()
+                loss = 0.0
                 # plot_grad_flow(model.named_parameters())
                 optimizer.step()
                 optimizer.step_scheduler(loss_fns)

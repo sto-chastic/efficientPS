@@ -35,33 +35,37 @@ class ROIFeatureExtraction(nn.Module):
         self.nms_threshold = nms_threshold
 
     @staticmethod
-    def checkpointed_nms(threshold, splits=100):
-        def custom_forward(*inputs):
-            div = math.ceil(inputs[0].shape[0] / splits)
+    def checkpointed_nms(boxes, scores, threshold, splits=1000):
 
-            collected = []
-            scores = []
-            for i in range(div):
-                input_data = inputs[0][i*splits:(i+1)*splits]
-                input_scores = inputs[1][i*splits:(i+1)*splits]
+        def temp_checkpoint_f(threshold_):
+            def custom_forward(*inputs):
                 nms_indices = nms(
-                    input_data,
-                    input_scores,
-                    iou_threshold=threshold,
+                    inputs[0],
+                    inputs[1],
+                    iou_threshold=threshold_,
                 )
-                collected.append(input_data.index_select(0, nms_indices))
-                scores.append(input_scores.index_select(0, nms_indices))
-            collected = torch.cat(collected, 0)
-            scores = torch.cat(scores, 0)
+                return inputs[0].index_select(0, nms_indices), inputs[1].index_select(0, nms_indices)
+            return custom_forward
 
-            nms_indices = nms(
-                collected,
-                scores,
-                iou_threshold=threshold,
+        collected_boxes = []
+        collected_scores = []
+        div = math.ceil(boxes.shape[0] / splits)
+        for i in range(div):
+            filtered_boxes, filtered_scores = checkpoint.checkpoint(
+                temp_checkpoint_f(threshold),
+                boxes[i*splits:(i+1)*splits],
+                scores[i*splits:(i+1)*splits]
             )
 
-            return collected.index_select(0, nms_indices)
-        return custom_forward
+            collected_boxes.append(filtered_boxes)
+            collected_scores.append(filtered_scores)
+
+        collected_boxes = torch.cat(collected_boxes, 0)
+        collected_scores = torch.cat(collected_scores, 0)
+
+        final_boxes = checkpoint.checkpoint(temp_checkpoint_f(threshold), collected_boxes, collected_scores)
+
+        return final_boxes[0]
 
     def forward(self, p32, p16, p8, p4):
         batches = p32.shape[0]
@@ -214,11 +218,19 @@ class ROIFeatureExtraction(nn.Module):
                 )
 
                 print("nms {} boxes".format(len(joined_anchors_per_level)))
-                joined_anchors_per_level = checkpoint.checkpoint(
-                    self.checkpointed_nms(self.nms_threshold), 
+                joined_anchors_per_level = self.checkpointed_nms( 
                     convert_box_chw_to_vertices(joined_anchors_per_level),
-                    joined_scores_per_level
+                    joined_scores_per_level,
+                    self.nms_threshold
                 )
+
+                # joined_anchors_per_level = convert_box_chw_to_vertices(joined_anchors_per_level)
+
+                # joined_anchors_per_level = checkpoint.checkpoint(
+                #     self.checkpointed_nms(self.nms_threshold), 
+                #     convert_box_chw_to_vertices(joined_anchors_per_level),
+                #     joined_scores_per_level
+                # )
 
                 extractions = checkpoint.checkpoint(
                     self.roi_align,

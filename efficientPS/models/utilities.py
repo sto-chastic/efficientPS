@@ -241,7 +241,6 @@ class RegionProposalNetwork(nn.Module):
         self.anchors = (
             anchors / scale
         )  # Sample: torch.tensor([[0.0, 0.0, 22.0, 22.0]])
-        # self.anchors = convert_box_chw_to_vertices(self.anchors)
         self.scale = scale
 
         self.num_anchors = len(anchors)
@@ -250,7 +249,7 @@ class RegionProposalNetwork(nn.Module):
         self.bn1 = nn.BatchNorm2d(256)
 
         self.anchors_conv = conv_1x1_bn_custom_act(
-            256, self.num_anchors * 4, activation=None
+            256, self.num_anchors * 4
         )
         self.objectness_conv = conv_1x1_bn_custom_act(256, self.num_anchors)
 
@@ -285,19 +284,17 @@ class RegionProposalNetwork(nn.Module):
             transformations[:, :, 1, ...] + y_bb_position
         )
 
+        transformations[:, :, :2, ...] = transformations[:, :, :2, ...] + anchors_batch[:, :, :2, ...]
+
         anchors_correction += transformations
 
-        transformations[:, :, 2:, ...] = (
-            transformations[:, :, 2:, ...] + anchors_batch[:, :, 2:, ...]
-        )
-
-        corrected_position = (
-            anchors_correction[:, :, :2, ...] + anchors_batch[:, :, :2, ...]
-        )
+        corrected_position = anchors_correction[:, :, :2, ...]
         corrected_size = (
             torch.exp(anchors_correction[:, :, 2:, ...])
             * anchors_batch[:, :, 2:, ...]
         )
+
+        transformations[:, :, 2:, ...] = transformations[:, :, 2:, ...] + anchors_batch[:, :, 2:, ...]
 
         corrected_anchors = torch.cat(
             (corrected_position, corrected_size), 2
@@ -308,9 +305,6 @@ class RegionProposalNetwork(nn.Module):
             .reshape(batch, 4, -1)
             .permute((0, 2, 1))
         )
-
-        if torch.sum(format_anchors.isnan()).item() > 0:
-            format_anchors
 
         objectness = objectness.view(batch, self.num_anchors, 1, -1)
         format_objectness = (

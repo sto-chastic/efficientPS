@@ -1,5 +1,5 @@
 import torch
-from ..dataset import THINGS_TO_THINGS_ID, ID_TO_LABELS
+from ..dataset import THINGS_TO_THINGS_ID, ID_TO_LABELS, THINGS_STUFF_TO_LABEL
 
 
 def iou_function(inputs, target):
@@ -43,6 +43,20 @@ def index_select2D(original, index1, index2=None):
     return torch.cat(
         [original[..., x, y].unsqueeze(0) for x, y in zip(index1, index2)]
     )
+
+
+def id_to_things_stuff_id(id_):
+    things_stuff_id = torch.zeros_like(id_) * torch.zeros(
+        (len(THINGS_STUFF_TO_LABEL), 1, 1)
+    ).to(id_.device)
+
+    for k, v in ID_TO_LABELS.items():
+        if v[0] in THINGS_STUFF_TO_LABEL:
+            new_id = THINGS_STUFF_TO_LABEL[v[0]]
+
+            things_stuff_id[new_id, ...] = id_.eq(k)*new_id
+
+    return torch.sum(things_stuff_id, dim=0).long()
 
 
 def id_to_things_id_expanded(id_):

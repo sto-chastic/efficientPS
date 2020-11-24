@@ -5,7 +5,47 @@ import torch
 from ..dataset.dataset import DataSet
 from ..models.full import PSOutput
 from ..panoptic_merge.panoptic_merge_arch import panoptic_fusion_module
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
 
+torch.backends.cudnn.benachmark = True
+
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+    
+    Usage: Plug this function in Trainer class after loss.backwards() as 
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads= []
+    layers = []
+    for n, p in named_parameters:
+        if(p.requires_grad) and ("bias" not in n) and ("bn" not in n) and ("se" not in n) and ("fpn.en._fc.weight" not in n):
+            if p.grad is not None:
+                layers.append(n)
+                ave_grads.append(p.grad.abs().mean())
+                max_grads.append(p.grad.abs().max())
+            else:
+                layers.append(n)
+                ave_grads.append(0)
+                max_grads.append(0)
+                print(n, ": nograd")
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(left=0, right=len(ave_grads))
+    # plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+    plt.ylim(bottom = -0.001, top=4) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    plt.show()
 
 class Core:
     def __init__(
@@ -71,56 +111,66 @@ class Trainer(Core):
         optimizer,
     ):
         model.train()
-        losses = {}
+        total_losses = {}
 
         optimizer.zero_grad()
         for i, loaded_data in enumerate(tqdm(self.loader)):
-            total_loss = 0.0
+            losses = {}
+            if len(loaded_data.get_bboxes()) == 0:
+                continue
+            # with torch.autograd.detect_anomaly():
             image = loaded_data.get_image()
-
             inference = model(image)
+
+            output_image, intermediate_logits = panoptic_fusion_module(
+                inference, probe_name="./probe.png"
+            )
+
             loss_fns = loss_class(loaded_data, inference)
             loss = loss_fns.get_total_loss()
 
-            total_loss += loss
+            if i % self.minibatch_size == 0 and i > 0:
+                loss = loss/self.minibatch_size
+                loss.backward()
+                # plot_grad_flow(model.named_parameters())
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
+            elif i == len(self.loader):
+                div = i - (i // self.minibatch_size) * self.minibatch_size
+                loss = loss/div
+
+                loss.backward()
+                # plot_grad_flow(model.named_parameters())
+                optimizer.step()
+                optimizer.step_scheduler(loss_fns)
+                optimizer.zero_grad()
 
             for key, loss_ele in loss_fns.losses_dict.items():
+                if key not in total_losses:
+                    total_losses[key] = 0.0
                 if key not in losses:
                     losses[key] = 0.0
                 if isinstance(loss_ele, torch.Tensor):
+                    total_losses[key] += loss_ele.item()
                     losses[key] += loss_ele.item()
                 else:
+                    total_losses[key] += loss_ele
                     losses[key] += loss_ele
 
+            print("W Update : Loss={}".format(loss))
+            # self.print_loss(loss_fns.losses_dict)
+
             if i % self.minibatch_size == 0 and i > 0:
-                total_loss /= self.minibatch_size
-                total_loss.backward()
+                if self.visdom is not None:
+                    for loss_type, loss in losses.items():
+                        if isinstance(loss, torch.Tensor):
+                            loss = loss.item()
+                        self.visdom.plot(loss_type, "training", "training", loss/self.minibatch_size)
 
-                optimizer.step()
-                optimizer.step_scheduler(loss_fns)
-                optimizer.zero_grad()
-                print("W Update : Loss={}".format(total_loss))
-                self.print_loss(loss_fns.losses_dict)
-
-            elif i == len(self.loader):
-                div = i - (i // self.minibatch_size) * self.minibatch_size
-                total_loss /= div
-                total_loss.backward()
-
-                optimizer.step()
-                optimizer.step_scheduler(loss_fns)
-                optimizer.zero_grad()
-                print("W Update : Loss={}".format(total_loss))
-
-            if self.visdom is not None:
-                for loss_type, loss in loss_fns.losses_dict.items():
-                    if isinstance(loss, torch.Tensor):
-                        loss = loss.item()
-                    self.visdom.plot(loss_type, "training", "training", loss)
-
-        for key, loss_ele in losses.items():
-            losses[key] /= i
-        return losses, inference
+        for key, loss_ele in total_losses.items():
+            total_losses[key] /= i
+        return total_losses, inference
 
     @staticmethod
     def print_loss(losses_dict):
@@ -148,6 +198,8 @@ class Validator(Core):
         losses = {}
         with torch.no_grad():
             for i, loaded_data in enumerate(tqdm(self.loader)):
+                if len(loaded_data.get_bboxes()) == 0:
+                    continue
                 image = loaded_data.get_image()
                 inference = model(image)
                 loss_fns = loss_class(loaded_data, inference)

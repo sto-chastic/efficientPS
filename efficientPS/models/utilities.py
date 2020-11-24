@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.ops import nms
+import torch.utils.checkpoint as checkpoint
 
 from . import *
 
@@ -89,24 +90,29 @@ class DepthSeparableConv2d(nn.Module):
             in_channels, out_channels, kernel_size=1, bias=bias
         )
 
+    @staticmethod
+    def checkpointer(function):
+        def custom_forward(*inputs):
+            outputs = function(inputs[0])
+            return outputs
+        return custom_forward
+
+    def forward_(self, x):
+        x = checkpoint.checkpoint(
+            self.checkpointer(self.forward), x
+        )
+        return x
+
     def forward(self, x):
         x = self.conv(x)
         x = self.depth_conv(x)
         return x
 
 
-# def conv_3x3_bn(in_channels, out_channels, stride, activation=nn.LeakyReLU):
-#     return nn.Sequential(
-#         nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False),
-#         nn.BatchNorm2d(out_channels),
-#         activation(inplace=True)
-#     )
-
-
 def conv_1x1_bn(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
-        nn.BatchNorm2d(out_channels),
+        # nn.BatchNorm2d(out_channels),
         nn.ReLU6(inplace=True),
     )
 
@@ -115,13 +121,13 @@ def conv_1x1_bn_custom_act(in_channels, out_channels, activation=nn.Sigmoid):
     if activation:
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(out_channels),
+            # nn.BatchNorm2d(out_channels),
             activation(),
         )
     else:
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(out_channels),
+            # nn.BatchNorm2d(out_channels),
         )
 
 
@@ -180,9 +186,9 @@ class DensePredictionCell(nn.Module):
         self.conv1 = DepthSeparableConv2d(
             256, 256, kernel_size=3, stride=1, padding=(1, 6), dilation=(1, 6)
         )
-        self.bn1 = nn.BatchNorm2d(256)
+        # self.bn1 = nn.BatchNorm2d(256)
         self.conv2 = DepthSeparableConv2d(256, 256, kernel_size=3, stride=1)
-        self.bn2 = nn.BatchNorm2d(256)
+        # self.bn2 = nn.BatchNorm2d(256)
         self.conv3 = DepthSeparableConv2d(
             256,
             256,
@@ -191,7 +197,7 @@ class DensePredictionCell(nn.Module):
             padding=(6, 21),
             dilation=(6, 21),
         )
-        self.bn3 = nn.BatchNorm2d(256)
+        # self.bn3 = nn.BatchNorm2d(256)
         self.conv4 = DepthSeparableConv2d(
             256,
             256,
@@ -200,21 +206,28 @@ class DensePredictionCell(nn.Module):
             padding=(18, 15),
             dilation=(18, 15),
         )
-        self.bn4 = nn.BatchNorm2d(256)
+        # self.bn4 = nn.BatchNorm2d(256)
         self.conv5 = DepthSeparableConv2d(
             256, 256, kernel_size=3, stride=1, padding=(6, 3), dilation=(6, 3)
         )
-        self.bn5 = nn.BatchNorm2d(256)
+        # self.bn5 = nn.BatchNorm2d(256)
 
         self.conv_final = conv_1x1_bn(1280, 128)
 
     def forward(self, x):
-        x_1 = self.activation(self.bn1(self.conv1(x)))
+        # x_1 = self.activation(self.bn1(self.conv1(x)))
 
-        x_2 = self.activation(self.bn2(self.conv2(x_1)))
-        x_3 = self.activation(self.bn3(self.conv3(x_1)))
-        x_4 = self.activation(self.bn4(self.conv4(x_1)))
-        x_5 = self.activation(self.bn5(self.conv5(x_4)))
+        # x_2 = self.activation(self.bn2(self.conv2(x_1)))
+        # x_3 = self.activation(self.bn3(self.conv3(x_1)))
+        # x_4 = self.activation(self.bn4(self.conv4(x_1)))
+        # x_5 = self.activation(self.bn5(self.conv5(x_4)))
+
+        x_1 = self.activation(self.conv1(x))
+
+        x_2 = self.activation(self.conv2(x_1))
+        x_3 = self.activation(self.conv3(x_1))
+        x_4 = self.activation(self.conv4(x_1))
+        x_5 = self.activation(self.conv5(x_4))
 
         block = torch.cat([x_1, x_2, x_3, x_4, x_5], dim=1)
 
@@ -339,4 +352,4 @@ if __name__ == "__main__":
     # print("out", out.shape)
     rpn = RegionProposalNetwork(ANCHORS, 32)
     out = rpn(torch.rand(3, 256, 32, 64))
-    print("out", out.shape)
+    print(out.anchors[0].shape)

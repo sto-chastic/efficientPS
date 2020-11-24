@@ -1,18 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import *
+import torch.utils.checkpoint as checkpoint
+
 from ..train_core.utilities import index_select2D
-
-
-from .utilities import (
-    DepthSeparableConv2d,
-    MobileInvertedBottleneck,
-    conv_1x1_bn,
-)
+from . import *
 from .fpn_pretrained import TwoWayFeaturePyramid
-from .ss_head import SemanticSegmentationHead
 from .is_head import InstanceSegmentationHead
+from .ss_head import SemanticSegmentationHead
+from .utilities import (DepthSeparableConv2d, MobileInvertedBottleneck,
+                        conv_1x1_bn)
 
 
 class PSOutput:
@@ -87,8 +84,13 @@ class FullModel(nn.Module):
 
     def forward(self, inp):
         # Main and bottom-up
-        p32, p16, p8, p4 = self.fpn(inp)
-        semantic_logits = self.ss_head(p32, p16, p8, p4)
+        p32, p16, p8, p4 = checkpoint.checkpoint(
+            self.fpn, inp
+        )
+        semantic_logits = checkpoint.checkpoint(
+            self.ss_head, p32, p16, p8, p4
+        )
+
         (
             classes,
             bboxes,
@@ -96,6 +98,7 @@ class FullModel(nn.Module):
             proposed_bboxes,
             primitive_anchors,
         ) = self.is_head(p32, p16, p8, p4)
+
         return PSOutput(
             semantic_logits,
             classes,

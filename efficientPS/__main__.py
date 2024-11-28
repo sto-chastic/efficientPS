@@ -229,10 +229,6 @@ def train_ps(
         total_validation_loss = validation_loss["full_model"]
         print(f"{epoch}/{epochs} : Loss={total_validation_loss}")
 
-        # output_image, intermediate_logits = panoptic_fusion_module(
-        #     inference, probe_name="./validation{}.png".format(epoch)
-        # )
-
         if line_plotter:
             for loss_type, loss in validation_loss.items():
                 line_plotter.plot(loss_type, "validation", "validation", loss)
